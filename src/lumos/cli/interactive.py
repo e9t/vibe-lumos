@@ -289,6 +289,7 @@ class HelpScreen(ModalScreen[None]):
  [bold]Enter[/bold]   Expand / collapse   [bold]e[/bold]       Expand all
  [bold]/[/bold]       Search              [bold]x[/bold]       Delete
  [bold]+/-[/bold]     Priority up/down    [bold]n[/bold]       Edit note
+ [bold]o[/bold]       Open URL in browser
  [bold]?[/bold]       This help           [bold]Esc[/bold]     Quit / Cancel
 
 Press any key to close."""
@@ -348,12 +349,14 @@ class LumosApp(App):
         Binding("plus,equal", "priority_up", "Priority", key_display="+/-"),
         Binding("minus,underscore,hyphen_minus", "priority_down", "Priority", show=False),
         Binding("n", "edit_note", "Note", show=False),
+        Binding("o", "open_url", "Open", key_display="o"),
         Binding("question_mark", "show_help", "Help", key_display="?"),
         Binding("q", "quit_or_cancel", "Quit", key_display="q"),
         Binding("escape", "quit_or_cancel", "Quit", show=False),
     ]
 
     # Korean IME: j→ㅓ, k→ㅏ, e→ㄷ, x→ㅌ, n→ㅜ, h→ㅗ, l→ㅣ, q→ㅂ
+    # Korean IME: j→ㅓ, k→ㅏ, e→ㄷ, x→ㅌ, n→ㅜ, h→ㅗ, l→ㅣ, q→ㅂ, o→ㅐ
     _KO_KEY_MAP = {
         "ㅓ": "action_cursor_down",
         "ㅏ": "action_cursor_up",
@@ -363,6 +366,7 @@ class LumosApp(App):
         "ㅗ": "action_go_first",
         "ㅣ": "action_go_last",
         "ㅂ": "action_quit_or_cancel",
+        "ㅐ": "action_open_url",
     }
 
     def __init__(
@@ -525,9 +529,10 @@ class LumosApp(App):
         # So suffix is always 11 + 10 = 21 chars wide
         hdr_prefix = f"{'':>2}  "  # 4 chars, same as f"{num:>2}  "
         title_label = "Title"
+        pri_label = f"{'Priority':>8} "  # 9 chars, matches priority column
         type_label = f"{'Type':<11}"  # 11 chars, matches source_str:<11
         date_label = f"{'Updated':>10}"  # 10 chars, matches YYYY-MM-DD
-        hdr_suffix = type_label + date_label
+        hdr_suffix = pri_label + type_label + date_label
         hdr_prefix_w = _wcswidth(hdr_prefix)
         hdr_suffix_w = _wcswidth(hdr_suffix)
         hdr_pad = max(1, cw - hdr_prefix_w - _wcswidth(title_label) - hdr_suffix_w)
@@ -559,18 +564,18 @@ class LumosApp(App):
                 title = g.page.title
                 hl_count = len(g.children)
                 pri = g.page.priority
-                pri_badge = f" [{'+' if pri > 0 else ''}{pri}]" if pri != 0 else ""
+                pri_col = f"{pri:>8} " if pri != 0 else f"{'·':>8} "
+                pri_col_w = _wcswidth(pri_col)
                 hl_badge = f" ({hl_count})" if hl_count else ""
-                hl_badge = pri_badge + hl_badge
                 badge_w = _wcswidth(hl_badge)
-                # Available width for title: cw - prefix - suffix - badge - 1(min padding)
-                avail = cw - prefix_w - suffix_w - badge_w - 1
+                # Available width for title: cw - prefix - suffix - pri_col - badge - 1(min padding)
+                avail = cw - prefix_w - suffix_w - pri_col_w - badge_w - 1
                 title_w = _wcswidth(title)
                 if title_w > avail:
                     title = _wctruncate(title, avail)
                     title_w = _wcswidth(title)
 
-                used = prefix_w + title_w + badge_w + suffix_w
+                used = prefix_w + title_w + badge_w + pri_col_w + suffix_w
                 padding = max(1, cw - used)
 
                 line = Text()
@@ -585,6 +590,7 @@ class LumosApp(App):
                 if hl_badge:
                     line.append(hl_badge, style="dim")
                 line.append(" " * padding)
+                line.append(pri_col, style="dim" if pri == 0 else "bold cyan")
                 line.append(suffix, style="dim")
                 if is_selected:
                     line.append(" ", style=self.sel_style)
@@ -887,6 +893,19 @@ class LumosApp(App):
             )
             self._load_data()
             self._render()
+
+    def action_open_url(self):
+        if not self.rows:
+            return
+        row = self.rows[self.cursor]
+        url = None
+        if isinstance(row, PageRow):
+            url = row.group.page.url
+        elif isinstance(row, HighlightRow):
+            url = row.group.page.url
+        if url:
+            import webbrowser
+            webbrowser.open(url)
 
     def action_edit_note(self):
         row = self.rows[self.cursor] if self.rows else None
