@@ -529,9 +529,9 @@ class LumosApp(App):
         # So suffix is always 11 + 10 = 21 chars wide
         hdr_prefix = f"{'':>2}  "  # 4 chars, same as f"{num:>2}  "
         title_label = "Title"
-        pri_label = f"{'Priority':>8} "  # 9 chars, matches priority column
-        type_label = f"{'Type':<11}"  # 11 chars, matches source_str:<11
-        date_label = f"{'Updated':>10}"  # 10 chars, matches YYYY-MM-DD
+        pri_label = f"{'Priority':<10}  "  # 12 chars, matches priority column
+        type_label = f"{'Type':<8}  "  # 10 chars, matches source column
+        date_label = f"{'Updated':<10}"  # 10 chars, matches YYYY-MM-DD
         hdr_suffix = pri_label + type_label + date_label
         hdr_prefix_w = _wcswidth(hdr_prefix)
         hdr_suffix_w = _wcswidth(hdr_suffix)
@@ -555,7 +555,7 @@ class LumosApp(App):
                 num = row.index + 1
                 source_str = g.page.source.via.value
                 date_str = g.page.updated_at.strftime("%Y-%m-%d")
-                suffix = f"{source_str:<11}{date_str}"
+                suffix = f"{source_str:<8}  {date_str:<10}"
                 suffix_w = _wcswidth(suffix)
 
                 prefix = f"{num:>2}  "
@@ -563,8 +563,8 @@ class LumosApp(App):
 
                 title = g.page.title
                 hl_count = len(g.children)
-                pri = g.page.priority
-                pri_col = f"{pri:>8} " if pri != 0 else f"{'·':>8} "
+                pri = g.page.priority + sum(c.priority for c in g.children)
+                pri_col = f"{pri:<10}  " if pri != 0 else f"{'·':<10}  "
                 pri_col_w = _wcswidth(pri_col)
                 hl_badge = f" ({hl_count})" if hl_count else ""
                 badge_w = _wcswidth(hl_badge)
