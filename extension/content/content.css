@@ -1,0 +1,152 @@
+/* Lumos highlight mark */
+mark.lumos-highlight {
+  background-color: #FFEB3B;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}
+
+/* Mini toolbar */
+.lumos-toolbar {
+  position: fixed;
+  z-index: 2147483647;
+  display: flex;
+  gap: 2px;
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 5px 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  user-select: none;
+  pointer-events: all;
+}
+
+.lumos-toolbar button {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+  line-height: 1.4;
+  transition: background 0.1s;
+}
+
+.lumos-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Note popup */
+.lumos-note-input {
+  position: fixed;
+  z-index: 2147483647;
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  pointer-events: all;
+}
+
+.lumos-note-input textarea {
+  display: block;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 13px;
+  padding: 6px 8px;
+  resize: none;
+  width: 240px;
+  height: 72px;
+  font-family: inherit;
+  outline: none;
+}
+
+.lumos-note-input textarea:focus {
+  border-color: #FFEB3B;
+}
+
+.lumos-note-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  justify-content: flex-end;
+}
+
+.lumos-note-input button {
+  background: #333;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.lumos-note-input button:hover {
+  background: #444;
+}
+
+.lumos-note-input button.primary {
+  background: #4CAF50;
+  color: #fff;
+}
+
+.lumos-note-input button.primary:hover {
+  background: #43A047;
+}
+
+/* Note tooltip on highlight hover */
+.lumos-tooltip {
+  position: fixed;
+  z-index: 2147483647;
+  background: #1a1a1a;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 12px;
+  max-width: 280px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+mark.lumos-highlight[data-lumos-note] {
+  cursor: help;
+}
+
+/* Toast notification */
+.lumos-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+  background: #1a1a1a;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: lumos-fadein 0.2s ease;
+  pointer-events: none;
+}
+
+@keyframes lumos-fadein {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

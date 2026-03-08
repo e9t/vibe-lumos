@@ -234,10 +234,12 @@ class ConfirmScreen(ModalScreen[bool]):
         self.message = message
 
     def compose(self) -> ComposeResult:
-        yield Static(self.message, id="confirm-msg")
-        yield Static("[y/n]", id="confirm-hint")
+        yield Static(f"{self.message} [y/n]", id="confirm-msg")
 
     def key_y(self):
+        self.dismiss(True)
+
+    def key_enter(self):
         self.dismiss(True)
 
     def key_n(self):
@@ -351,7 +353,7 @@ class LumosApp(App):
         Binding("escape", "quit_or_cancel", "Quit", show=False),
     ]
 
-    # Korean IME: j→ㅓ, k→ㅏ, e→ㄷ, x→ㅌ, n→ㅜ, h→ㅗ, l→ㅣ
+    # Korean IME: j→ㅓ, k→ㅏ, e→ㄷ, x→ㅌ, n→ㅜ, h→ㅗ, l→ㅣ, q→ㅂ
     _KO_KEY_MAP = {
         "ㅓ": "action_cursor_down",
         "ㅏ": "action_cursor_up",
@@ -360,6 +362,7 @@ class LumosApp(App):
         "ㅜ": "action_edit_note",
         "ㅗ": "action_go_first",
         "ㅣ": "action_go_last",
+        "ㅂ": "action_quit_or_cancel",
     }
 
     def __init__(
@@ -510,12 +513,31 @@ class LumosApp(App):
         cursor_y = 0  # line number where cursor row starts
 
         if self.query:
-            header = Text(f' 🔍 "{self.query}", {self.total} results')
+            search_line = Text(f' 🔍 "{self.query}", {self.total} results')
             if self.expanded_terms and len(self.expanded_terms) > 1:
                 extra = [t for t in self.expanded_terms if t.lower() != self.query.strip('"').lower()]
                 if extra:
-                    header.append(f"  ← {', '.join(extra)}", style="dim italic")
-            lines.append(header)
+                    search_line.append(f"  ← {', '.join(extra)}", style="dim italic")
+            lines.append(search_line)
+
+        # Table header — align with data rows
+        # Data row suffix: f"{source_str:<11}{date_str}" where date_str = "YYYY-MM-DD" (10 chars)
+        # So suffix is always 11 + 10 = 21 chars wide
+        hdr_prefix = f"{'':>2}  "  # 4 chars, same as f"{num:>2}  "
+        title_label = "Title"
+        type_label = f"{'Type':<11}"  # 11 chars, matches source_str:<11
+        date_label = f"{'Updated':>10}"  # 10 chars, matches YYYY-MM-DD
+        hdr_suffix = type_label + date_label
+        hdr_prefix_w = _wcswidth(hdr_prefix)
+        hdr_suffix_w = _wcswidth(hdr_suffix)
+        hdr_pad = max(1, cw - hdr_prefix_w - _wcswidth(title_label) - hdr_suffix_w)
+        header_line = Text()
+        header_line.append(" ")
+        header_line.append(hdr_prefix)
+        header_line.append(title_label, style="bold dim")
+        header_line.append(" " * hdr_pad)
+        header_line.append(hdr_suffix, style="bold dim")
+        lines.append(header_line)
         lines.append(Text("-" * w, style="dim"))
 
         for ri, row in enumerate(self.rows):
@@ -527,7 +549,7 @@ class LumosApp(App):
                 g = row.group
                 num = row.index + 1
                 source_str = g.page.source.via.value
-                date_str = g.page.created_at.strftime("%Y-%m-%d")
+                date_str = g.page.updated_at.strftime("%Y-%m-%d")
                 suffix = f"{source_str:<11}{date_str}"
                 suffix_w = _wcswidth(suffix)
 
@@ -536,7 +558,10 @@ class LumosApp(App):
 
                 title = g.page.title
                 hl_count = len(g.children)
+                pri = g.page.priority
+                pri_badge = f" [{'+' if pri > 0 else ''}{pri}]" if pri != 0 else ""
                 hl_badge = f" ({hl_count})" if hl_count else ""
+                hl_badge = pri_badge + hl_badge
                 badge_w = _wcswidth(hl_badge)
                 # Available width for title: cw - prefix - suffix - badge - 1(min padding)
                 avail = cw - prefix_w - suffix_w - badge_w - 1
@@ -799,7 +824,7 @@ class LumosApp(App):
             msg = f"Delete '{group.page.title}'"
             if child_count:
                 msg += f" and {child_count} highlight(s)/image(s)"
-            msg += "? [y/n]"
+            msg += "?"
 
             def on_confirm(result: bool):
                 if result:
@@ -825,7 +850,7 @@ class LumosApp(App):
         elif isinstance(row, HighlightRow):
             item = row.item
             preview = (item.text or item.media or "")[:40]
-            msg = f"Delete highlight '{preview}…'? [y/n]"
+            msg = f"Delete highlight '{preview}…'?"
 
             def on_confirm_hl(result: bool):
                 if result:
@@ -841,10 +866,11 @@ class LumosApp(App):
 
     def action_priority_up(self):
         row = self.rows[self.cursor] if self.rows else None
-        if isinstance(row, HighlightRow):
+        if isinstance(row, (HighlightRow, PageRow)):
+            item_id = row.item.id if isinstance(row, HighlightRow) else row.group.page.id
             update_item(
                 self.items_path,
-                row.item.id,
+                item_id,
                 lambda it: it.model_copy(update={"priority": it.priority + 1}),
             )
             self._load_data()
@@ -852,10 +878,11 @@ class LumosApp(App):
 
     def action_priority_down(self):
         row = self.rows[self.cursor] if self.rows else None
-        if isinstance(row, HighlightRow):
+        if isinstance(row, (HighlightRow, PageRow)):
+            item_id = row.item.id if isinstance(row, HighlightRow) else row.group.page.id
             update_item(
                 self.items_path,
-                row.item.id,
+                item_id,
                 lambda it: it.model_copy(update={"priority": it.priority - 1}),
             )
             self._load_data()

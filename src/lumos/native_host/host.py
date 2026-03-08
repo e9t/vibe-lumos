@@ -26,7 +26,11 @@ from lumos.core.models import (
 from lumos.core.store import (
     append_item,
     build_url_index,
+    delete_item,
+    get_by_id,
     get_by_ids,
+    get_by_url,
+    update_item,
 )
 
 
@@ -48,6 +52,25 @@ def _send_message(msg: dict) -> None:
 
 def _error(msg: str) -> dict:
     return {"ok": False, "error": msg}
+
+
+def _touch_page(items_path: Path, url: str) -> None:
+    """Update the parent PAGE's updated_at so it floats to the top."""
+    from datetime import datetime, timezone
+    for page in get_by_url(items_path, url):
+        if page.type == ItemType.PAGE:
+            update_item(
+                items_path, page.id,
+                lambda it: it.model_copy(update={"updated_at": datetime.now(timezone.utc)}),
+            )
+            break
+
+
+def _touch_page_by_item_id(items_path: Path, item_id: str) -> None:
+    """Touch parent PAGE given a child item's ID."""
+    item = get_by_id(items_path, item_id)
+    if item and item.url:
+        _touch_page(items_path, item.url)
 
 
 def _handle(message: dict) -> dict:
@@ -74,6 +97,7 @@ def _handle(message: dict) -> dict:
             ) if message.get("xpath") else None,
         )
         saved = append_item(items_path, item)
+        _touch_page(items_path, message["url"])
         return {"ok": True, "item": json.loads(saved.model_dump_json())}
 
     elif action == "save_image":
@@ -98,6 +122,7 @@ def _handle(message: dict) -> dict:
             item.ocr_text = ocr_text
 
         saved = append_item(items_path, item)
+        _touch_page(items_path, message["url"])
         result = {"ok": True, "item": json.loads(saved.model_dump_json())}
         if ocr_err:
             result["ocr_error"] = ocr_err
@@ -106,14 +131,13 @@ def _handle(message: dict) -> dict:
     elif action == "save_page":
         import base64
 
-        item = Item(
-            type=ItemType.PAGE,
-            url=message["url"],
-            title=message["title"],
-            source=Source(via=SourceVia.WEB),
-        )
+        # Check for existing PAGE with same URL (upsert)
+        existing_pages = [
+            i for i in get_by_url(items_path, message["url"])
+            if i.type == ItemType.PAGE
+        ]
 
-        # Handle cache
+        # Build cache
         cache_formats = config.cache.formats
         mhtml_data = None
         readable_text = None
@@ -123,21 +147,55 @@ def _handle(message: dict) -> dict:
         if "readable" in cache_formats and "readable_text" in message:
             readable_text = message["readable_text"]
 
-        if mhtml_data or readable_text:
-            cache_result = save_cache(
-                config.cache_dir(), item.id, mhtml_data, readable_text
+        if existing_pages:
+            # Update existing page
+            page = existing_pages[0]
+            updates: dict = {"title": message["title"]}
+
+            if mhtml_data or readable_text:
+                cache_result = save_cache(
+                    config.cache_dir(), page.id, mhtml_data, readable_text
+                )
+                updates["cache"] = Cache(
+                    mhtml=cache_result.get("mhtml"),
+                    readable=cache_result.get("readable"),
+                )
+
+            saved = update_item(
+                items_path, page.id,
+                lambda it: it.model_copy(update=updates),
             )
-            item.cache = Cache(
-                mhtml=cache_result.get("mhtml"),
-                readable=cache_result.get("readable"),
+        else:
+            # Create new page
+            item = Item(
+                type=ItemType.PAGE,
+                url=message["url"],
+                title=message["title"],
+                source=Source(via=SourceVia.WEB),
             )
 
-        saved = append_item(items_path, item)
+            if mhtml_data or readable_text:
+                cache_result = save_cache(
+                    config.cache_dir(), item.id, mhtml_data, readable_text
+                )
+                item.cache = Cache(
+                    mhtml=cache_result.get("mhtml"),
+                    readable=cache_result.get("readable"),
+                )
+
+            saved = append_item(items_path, item)
+
         return {"ok": True, "item": json.loads(saved.model_dump_json())}
 
     elif action == "get_url_index":
         index = build_url_index(items_path)
         return {"ok": True, "index": index}
+
+    elif action == "check_url":
+        url = message.get("url", "")
+        items = get_by_url(items_path, url)
+        ids = [i.id for i in items]
+        return {"ok": True, "exists": len(ids) > 0, "ids": ids}
 
     elif action == "get_items_by_ids":
         ids = message.get("ids", [])
@@ -146,6 +204,31 @@ def _handle(message: dict) -> dict:
             "ok": True,
             "items": [json.loads(i.model_dump_json()) for i in items],
         }
+
+    elif action == "delete_item":
+        ok = delete_item(items_path, message["id"])
+        return {"ok": ok}
+
+    elif action == "update_note":
+        note = message.get("note")
+        updated = update_item(
+            items_path, message["id"],
+            lambda it: it.model_copy(update={"note": note}),
+        )
+        if updated:
+            _touch_page_by_item_id(items_path, message["id"])
+        return {"ok": updated is not None}
+
+    elif action == "update_priority":
+        delta = message.get("delta", 0)
+        updated = update_item(
+            items_path, message["id"],
+            lambda it: it.model_copy(update={"priority": it.priority + delta}),
+        )
+        if updated:
+            _touch_page_by_item_id(items_path, message["id"])
+            return {"ok": True, "priority": updated.priority}
+        return {"ok": False, "error": "Item not found"}
 
     else:
         return _error(f"Unknown action: {action}")

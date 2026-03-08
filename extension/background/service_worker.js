@@ -1,0 +1,315 @@
+'use strict';
+
+const HOST = 'com.lumos.host';
+
+// ─── Native Messaging ─────────────────────────────────────────────────────────
+
+function sendToHost(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendNativeMessage(HOST, message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(response);
+      }
+    });
+  });
+}
+
+// ─── URL Normalization ────────────────────────────────────────────────────────
+
+/** Normalise URL: strip fragment + trailing slash on bare-path URLs */
+function normalizeUrl(url) {
+  if (!url) return url;
+  let u = url.split('#')[0];
+  try {
+    const parsed = new URL(u);
+    if (parsed.pathname === '/') u = parsed.origin;
+  } catch (_) {}
+  return u;
+}
+
+
+// ─── Icon / Badge ─────────────────────────────────────────────────────────────
+
+async function updateBadge(tabId, url) {
+  try {
+    const response = await sendToHost({ action: 'check_url', url });
+    if (response.ok && response.exists) {
+      await chrome.action.setBadgeText({ text: '✓', tabId });
+      await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId });
+    } else {
+      await chrome.action.setBadgeText({ text: '', tabId });
+    }
+  } catch (e) {
+    console.error('Lumos: updateBadge error', e);
+    await chrome.action.setBadgeText({ text: '', tabId });
+  }
+}
+
+async function flashBadge(tabId, ok) {
+  const text = ok ? '✓' : '!';
+  const color = ok ? '#4CAF50' : '#F44336';
+  await chrome.action.setBadgeText({ text, tabId });
+  await chrome.action.setBadgeBackgroundColor({ color, tabId });
+}
+
+// ─── Lifecycle ────────────────────────────────────────────────────────────────
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'lumos-save-image',
+    title: 'Save to Lumos',
+    contexts: ['image'],
+  });
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
+    updateBadge(tabId, normalizeUrl(tab.url));
+  }
+});
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.url && !tab.url.startsWith('chrome://')) {
+      updateBadge(tabId, normalizeUrl(tab.url));
+    }
+  } catch (_) {}
+});
+
+// ─── Save Page (Cmd+D) ────────────────────────────────────────────────────────
+
+// Injected into the page to extract readable text
+function _extractReadableText() {
+  const clone = document.cloneNode(true);
+  for (const el of clone.querySelectorAll('script, style, nav, footer, header, aside')) {
+    el.remove();
+  }
+  return (clone.body?.innerText || '').slice(0, 50000);
+}
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command !== 'save-page') return;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.url || tab.url.startsWith('chrome://')) return;
+
+  const pageUrl = normalizeUrl(tab.url);
+
+  let readableText = null;
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: _extractReadableText,
+    });
+    readableText = result;
+  } catch (_) {}
+
+  let mhtmlBase64 = null;
+  try {
+    const mhtmlBlob = await new Promise((resolve) => {
+      chrome.pageCapture.saveAsMHTML({ tabId: tab.id }, resolve);
+    });
+    if (mhtmlBlob) {
+      const buf = await mhtmlBlob.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      mhtmlBase64 = btoa(binary);
+    }
+  } catch (_) {}
+
+  try {
+    const response = await sendToHost({
+      action: 'save_page',
+      url: pageUrl,
+      title: tab.title || '',
+      readable_text: readableText,
+      mhtml_data: mhtmlBase64,
+    });
+    await flashBadge(tab.id, response.ok);
+  } catch (e) {
+    console.error('Lumos: save-page command failed', e);
+    await flashBadge(tab.id, false);
+  }
+});
+
+// ─── Context Menu: Save Image ─────────────────────────────────────────────────
+
+// Injected into page to fetch an image and return base64
+async function _fetchImageAsBase64(srcUrl) {
+  try {
+    const resp = await fetch(srcUrl);
+    const blob = await resp.blob();
+    const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    const base64 = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.readAsDataURL(blob);
+    });
+    return { base64, ext };
+  } catch {
+    return null;
+  }
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== 'lumos-save-image') return;
+  if (!info.srcUrl || !tab) return;
+
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: _fetchImageAsBase64,
+      args: [info.srcUrl],
+    });
+
+    if (!result) throw new Error('Failed to fetch image data');
+
+    const pageUrl = normalizeUrl(tab.url);
+    const response = await sendToHost({
+      action: 'save_image',
+      url: pageUrl,
+      title: tab.title || '',
+      image_data: result.base64,
+      ext: result.ext,
+    });
+
+    if (response.ok) {
+      await updateBadge(tab.id, pageUrl);
+      chrome.tabs.sendMessage(tab.id, { type: 'IMAGE_SAVED' }).catch(() => {});
+    }
+  } catch (e) {
+    console.error('Lumos: save_image failed', e);
+  }
+});
+
+// ─── Messages from Content Script ────────────────────────────────────────────
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const tabId = sender.tab?.id;
+  const tabUrl = sender.tab?.url;
+
+  if (message.type === 'SAVE_HIGHLIGHT') {
+    (async () => {
+      try {
+        const pageUrl = normalizeUrl(message.url);
+        const response = await sendToHost({
+          action: 'save_highlight',
+          url: pageUrl,
+          title: message.title,
+          text: message.text,
+          note: message.note || null,
+          xpath: message.xpath || null,
+          start_offset: message.startOffset ?? null,
+          end_offset: message.endOffset ?? null,
+          text_fingerprint: message.textFingerprint || null,
+          original_html: message.originalHtml || null,
+        });
+        if (response.ok) {
+          if (tabId != null) await updateBadge(tabId, pageUrl);
+        }
+        sendResponse(response);
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'GET_ITEMS_BY_IDS') {
+    sendToHost({ action: 'get_items_by_ids', ids: message.ids })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (message.type === 'DELETE_ITEM') {
+    sendToHost({ action: 'delete_item', id: message.id })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (message.type === 'UPDATE_NOTE') {
+    sendToHost({ action: 'update_note', id: message.id, note: message.note })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (message.type === 'UPDATE_PRIORITY') {
+    sendToHost({ action: 'update_priority', id: message.id, delta: message.delta })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (message.type === 'GET_PAGE_ITEMS') {
+    // Called from popup and content script — get all items for a URL
+    (async () => {
+      try {
+        const url = normalizeUrl(message.url);
+        const check = await sendToHost({ action: 'check_url', url });
+        if (!check.ok || !check.ids.length) return sendResponse({ ok: true, items: [] });
+        const resp = await sendToHost({ action: 'get_items_by_ids', ids: check.ids });
+        sendResponse(resp);
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'SAVE_PAGE_NOW') {
+    // Called from popup — save specific tab
+    (async () => {
+      const { tabId, url, title } = message;
+      try {
+        const pageUrl = normalizeUrl(url);
+
+        let readableText = null;
+        try {
+          const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: _extractReadableText,
+          });
+          readableText = result;
+        } catch (_) {}
+
+        let mhtmlBase64 = null;
+        try {
+          const mhtmlBlob = await new Promise((resolve) => {
+            chrome.pageCapture.saveAsMHTML({ tabId }, resolve);
+          });
+          if (mhtmlBlob) {
+            const buf = await mhtmlBlob.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            mhtmlBase64 = btoa(binary);
+          }
+        } catch (_) {}
+
+        const response = await sendToHost({
+          action: 'save_page',
+          url: pageUrl,
+          title,
+          readable_text: readableText,
+          mhtml_data: mhtmlBase64,
+        });
+
+        if (response.ok) {
+          await flashBadge(tabId, true);
+          chrome.tabs.sendMessage(tabId, { type: 'PAGE_SAVED' }).catch(() => {});
+        }
+        sendResponse(response);
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+});
+

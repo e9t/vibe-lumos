@@ -61,8 +61,21 @@ def get_by_ids(path: Path, item_ids: list[str]) -> list[Item]:
     return [item for item in _read_all(path) if item.id in id_set]
 
 
+def _normalize_url(url: str) -> str:
+    """Strip trailing slash on root-path URLs for consistent matching."""
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(url)
+        if p.path == "/" and not p.query and not p.fragment:
+            return f"{p.scheme}://{p.netloc}"
+    except Exception:
+        pass
+    return url
+
+
 def get_by_url(path: Path, url: str) -> list[Item]:
-    return [item for item in _read_all(path) if item.url == url]
+    normalized = _normalize_url(url)
+    return [item for item in _read_all(path) if _normalize_url(item.url) == normalized]
 
 
 def update_item(path: Path, item_id: str, updater: Callable[[Item], Item]) -> Optional[Item]:
@@ -191,9 +204,17 @@ def search(
     pages = [item for item in all_items if item.type == ItemType.PAGE]
 
     if sort_by == "date":
-        pages.sort(key=lambda x: x.created_at, reverse=descending)
+        pages.sort(key=lambda x: x.updated_at, reverse=descending)
     elif sort_by == "priority":
-        pages.sort(key=lambda x: x.priority, reverse=descending)
+        # Hybrid: page.priority + sum(children.priority)
+        children_by_url: dict[str, int] = {}
+        for item in all_items:
+            if item.type != ItemType.PAGE:
+                children_by_url[item.url] = children_by_url.get(item.url, 0) + item.priority
+        pages.sort(
+            key=lambda x: x.priority + children_by_url.get(x.url, 0),
+            reverse=descending,
+        )
     elif sort_by == "title":
         pages.sort(key=lambda x: x.title.lower(), reverse=descending)
 
