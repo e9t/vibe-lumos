@@ -2,6 +2,8 @@
 
 Personal knowledge capture tool. Bookmark in Chrome. Search in Terminal.
 
+![](image.png)
+
 ## CLI
 
 ### Setup
