@@ -61,13 +61,43 @@ def get_by_ids(path: Path, item_ids: list[str]) -> list[Item]:
     return [item for item in _read_all(path) if item.id in id_set]
 
 
+_STRIP_PARAMS = frozenset({
+    # Facebook / Meta
+    "fbclid", "fb_action_ids", "fb_action_types", "fb_source", "fb_ref",
+    # Google / UTM
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "utm_id", "utm_source_platform", "utm_creative_format", "utm_marketing_tactic",
+    "gclid", "gclsrc", "dclid", "gbraid", "wbraid",
+    # Microsoft / Bing
+    "msclkid",
+    # HubSpot
+    "hsa_cam", "hsa_grp", "hsa_mt", "hsa_src", "hsa_ad", "hsa_acc",
+    "hsa_net", "hsa_ver", "hsa_la", "hsa_ol", "hsa_kw", "hsa_tgt",
+    # Mailchimp
+    "mc_cid", "mc_eid",
+    # Others
+    "_ga", "_gl", "_hsenc", "_hsmi", "_ke",
+    "ref", "ref_src", "ref_url",
+    "yclid", "twclid", "ttclid", "igshid", "li_fat_id",
+    "spm", "scm", "aff_trace_key", "terminal_id",
+    "ns_mchannel", "ns_source", "ns_campaign", "ns_linkname", "ns_fee",
+})
+
+
 def _normalize_url(url: str) -> str:
-    """Strip trailing slash on root-path URLs for consistent matching."""
-    from urllib.parse import urlparse
+    """Strip fragment, tracking params, trailing slash on root-path URLs."""
+    from urllib.parse import urlparse, urlencode, parse_qs
     try:
-        p = urlparse(url)
-        if p.path == "/" and not p.query and not p.fragment:
+        p = urlparse(url.split("#")[0])
+        # Strip tracking params
+        params = parse_qs(p.query, keep_blank_values=True)
+        cleaned = {k: v for k, v in params.items() if k not in _STRIP_PARAMS}
+        query = urlencode(cleaned, doseq=True)
+        if p.path == "/" and not query:
             return f"{p.scheme}://{p.netloc}"
+        if query:
+            return f"{p.scheme}://{p.netloc}{p.path}?{query}"
+        return f"{p.scheme}://{p.netloc}{p.path}"
     except Exception:
         pass
     return url

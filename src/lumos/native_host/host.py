@@ -230,6 +230,21 @@ def _handle(message: dict) -> dict:
             return {"ok": True, "priority": updated.priority}
         return {"ok": False, "error": "Item not found"}
 
+    elif action == "get_cache":
+        url = message.get("url", "")
+        pages = [i for i in get_by_url(items_path, url) if i.type == ItemType.PAGE]
+        if not pages:
+            return {"ok": False, "error": "Page not found"}
+        page = pages[0]
+        if not page.cache or not page.cache.readable:
+            return {"ok": False, "error": "No cache available"}
+        data_dir = config.get_data_dir()
+        cache_path = data_dir / page.cache.readable
+        if not cache_path.exists():
+            return {"ok": False, "error": "Cache file missing"}
+        text = cache_path.read_text(encoding="utf-8")
+        return {"ok": True, "text": text, "title": page.title}
+
     else:
         return _error(f"Unknown action: {action}")
 

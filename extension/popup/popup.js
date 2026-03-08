@@ -63,14 +63,22 @@ function renderItems(items) {
   _pageItem = items.find(i => i.type === 'page') || null;
   const priUp = document.getElementById('btn-pri-up');
   const priDown = document.getElementById('btn-pri-down');
+  const cacheBtn = document.getElementById('btn-view-cache');
   if (_pageItem) {
     delPageBtn.classList.remove('hidden');
     priUp.classList.remove('hidden');
     priDown.classList.remove('hidden');
+    // Show cache button only if page has a cache
+    if (_pageItem.cache?.readable) {
+      cacheBtn.classList.remove('hidden');
+    } else {
+      cacheBtn.classList.add('hidden');
+    }
   } else {
     delPageBtn.classList.add('hidden');
     priUp.classList.add('hidden');
     priDown.classList.add('hidden');
+    cacheBtn.classList.add('hidden');
   }
 
   if (!items.length) {
@@ -206,6 +214,31 @@ async function init() {
   // Priority buttons
   document.getElementById('btn-pri-up').addEventListener('click', () => updatePagePriority(1));
   document.getElementById('btn-pri-down').addEventListener('click', () => updatePagePriority(-1));
+
+  // View Cache button
+  document.getElementById('btn-view-cache').addEventListener('click', async () => {
+    if (!_currentTab?.url) return;
+    const btn = document.getElementById('btn-view-cache');
+    btn.disabled = true;
+    try {
+      const resp = await chrome.runtime.sendMessage({ type: 'GET_CACHE', url: _currentTab.url });
+      if (resp?.ok) {
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${resp.title} — Lumos Cache</title>`
+          + `<style>body{max-width:720px;margin:2em auto;padding:0 1em;font:16px/1.6 system-ui,sans-serif;color:#333}`
+          + `pre{white-space:pre-wrap;word-wrap:break-word}</style></head>`
+          + `<body><h1>${resp.title}</h1><pre>${resp.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</pre></body></html>`;
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        chrome.tabs.create({ url });
+      } else {
+        showStatus(resp?.error || 'No cache available', 'error');
+      }
+    } catch (e) {
+      showStatus(e.message || 'Error', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 init();

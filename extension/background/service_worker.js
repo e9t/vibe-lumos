@@ -18,13 +18,40 @@ function sendToHost(message) {
 
 // ─── URL Normalization ────────────────────────────────────────────────────────
 
-/** Normalise URL: strip fragment + trailing slash on bare-path URLs */
+/** Tracking / junk query params to strip from URLs */
+const STRIP_PARAMS = new Set([
+  // Facebook / Meta
+  'fbclid', 'fb_action_ids', 'fb_action_types', 'fb_source', 'fb_ref',
+  // Google / UTM
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'utm_id', 'utm_source_platform', 'utm_creative_format', 'utm_marketing_tactic',
+  'gclid', 'gclsrc', 'dclid', 'gbraid', 'wbraid',
+  // Microsoft / Bing
+  'msclkid',
+  // HubSpot
+  'hsa_cam', 'hsa_grp', 'hsa_mt', 'hsa_src', 'hsa_ad', 'hsa_acc',
+  'hsa_net', 'hsa_ver', 'hsa_la', 'hsa_ol', 'hsa_kw', 'hsa_tgt',
+  // Mailchimp
+  'mc_cid', 'mc_eid',
+  // Others
+  '_ga', '_gl', '_hsenc', '_hsmi', '_ke',
+  'ref', 'ref_src', 'ref_url',
+  'yclid', 'twclid', 'ttclid', 'igshid', 'li_fat_id',
+  'spm', 'scm', 'aff_trace_key', 'terminal_id',
+  'ns_mchannel', 'ns_source', 'ns_campaign', 'ns_linkname', 'ns_fee',
+]);
+
+/** Normalise URL: strip fragment, tracking params, trailing slash on bare-path URLs */
 function normalizeUrl(url) {
   if (!url) return url;
   let u = url.split('#')[0];
   try {
     const parsed = new URL(u);
-    if (parsed.pathname === '/') u = parsed.origin;
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (STRIP_PARAMS.has(key)) parsed.searchParams.delete(key);
+    }
+    if (parsed.pathname === '/' && !parsed.search) return parsed.origin;
+    u = parsed.toString();
   } catch (_) {}
   return u;
 }
@@ -241,6 +268,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'UPDATE_PRIORITY') {
     sendToHost({ action: 'update_priority', id: message.id, delta: message.delta })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (message.type === 'GET_CACHE') {
+    const url = normalizeUrl(message.url);
+    sendToHost({ action: 'get_cache', url })
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: e.message }));
     return true;
