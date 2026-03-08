@@ -2,193 +2,76 @@
 
 from __future__ import annotations
 
-import json
-import os
-import platform
-import subprocess
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 
 import typer
-from rich import print as rprint
-from rich.console import Console
 
-from lumos.core.config import (
-    CONFIG_PATH,
-    LumosConfig,
-    load_config,
-    save_config,
-    update_config,
-)
-from lumos.core.models import Item, ItemType, Source, SourceVia
-from lumos.core.store import append_item, get_all
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path.home() / ".env")
+except ImportError:
+    pass
+
+
+class _LumosGroup(typer.core.TyperGroup):
+    def format_help(self, ctx, formatter):
+        super().format_help(ctx, formatter)
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+
+        tbl = Table(show_header=False, box=None, padding=(0, 1))
+        tbl.add_column(style="bold", no_wrap=True)
+        tbl.add_column()
+        tbl.add_row("lumos-init", "Initialize Lumos and register the native messaging host.")
+        tbl.add_row("lumos-import", "Import data from Kindle and Diigo.")
+
+        Console().print(Panel(tbl, title="External Commands", title_align="left", border_style="dim"))
+
 
 app = typer.Typer(
     name="lumos",
-    help="Personal knowledge capture tool.",
+    cls=_LumosGroup,
+    help="A command-line tool for capturing and searching your digital knowledge.",
     add_completion=False,
     invoke_without_command=True,
     no_args_is_help=False,
+    context_settings={"help_option_names": ["-h", "--help"], "allow_interspersed_args": True},
 )
 
-console = Console()
 
-# ── import subcommand ──────────────────────────────────────────────────────
-from lumos.cli.import_cmd import import_app  # noqa: E402
-
-app.add_typer(import_app, name="import", help="Import from external sources.")
-
-# ── config subcommand ──────────────────────────────────────────────────────
-config_app = typer.Typer(help="Manage configuration.")
-app.add_typer(config_app, name="config")
+def _parse_sort(value: str) -> tuple[str, bool]:
+    """Parse sort spec like 'date', 'date:asc', 'priority:desc'."""
+    if ":" in value:
+        field, direction = value.split(":", 1)
+        return field, direction != "asc"
+    return value, True
 
 
-@config_app.command("show")
-def config_show():
-    """Show current configuration."""
-    config = load_config()
-    rprint(json.dumps(config.model_dump(), indent=2, ensure_ascii=False))
+_COLOR_MAP: dict[str, str] = {
+    "yellow": "bright_yellow",
+    "blue": "dodger_blue2",
+    "orange": "dark_orange",
+    "purple": "medium_purple",
+}
+
+_LIGHT_BACKGROUNDS = {"yellow", "green", "bright_yellow"}
 
 
-@config_app.command("set")
-def config_set(key: str, value: str):
-    """Set a config value (dot-separated key)."""
-    parts = key.split(".")
-    updates: dict = {}
-    current = updates
-    for part in parts[:-1]:
-        current[part] = {}
-        current = current[part]
-    # Try to parse as JSON for booleans/numbers
-    try:
-        current[parts[-1]] = json.loads(value)
-    except json.JSONDecodeError:
-        current[parts[-1]] = value
-    config = update_config(updates)
-    rprint(f"[green]✓[/green] Set {key} = {value}")
+def _rich_color(name: str) -> str:
+    """Map user-friendly color names to valid Rich color names."""
+    return _COLOR_MAP.get(name, name)
 
 
-@config_app.command("path")
-def config_path():
-    """Show config file path."""
-    rprint(str(CONFIG_PATH))
+def _hl_style(color: str) -> str:
+    """Build highlight style — dark text on light backgrounds."""
+    rc = _rich_color(color)
+    fg = "black " if rc in _LIGHT_BACKGROUNDS or color in _LIGHT_BACKGROUNDS else ""
+    return f"{fg}bold on {rc}"
 
 
-@config_app.command("edit")
-def config_edit():
-    """Open config in $EDITOR."""
-    editor = os.environ.get("EDITOR", "vim")
-    if not CONFIG_PATH.exists():
-        save_config(LumosConfig())
-    subprocess.run([editor, str(CONFIG_PATH)])
-
-
-# ── init ───────────────────────────────────────────────────────────────────
-@app.command()
-def init(
-    data_dir: Annotated[
-        Optional[str], typer.Option("--data-dir", help="Data directory path")
-    ] = None,
-):
-    """Initialize Lumos."""
-    config = load_config()
-    if data_dir:
-        config.data_dir = data_dir
-
-    dd = config.get_data_dir()
-
-    # Create directories
-    dd.mkdir(parents=True, exist_ok=True)
-    config.media_dir().mkdir(parents=True, exist_ok=True)
-    config.cache_dir().mkdir(parents=True, exist_ok=True)
-
-    # Create items.jsonl if missing
-    items_path = config.items_path()
-    if not items_path.exists():
-        items_path.touch()
-
-    # Save config
-    save_config(config)
-    rprint(f"[green]✅[/green] Created: {dd}/{{items.jsonl, media/, cache/}}")
-    rprint(f"[green]✅[/green] Config: {CONFIG_PATH}")
-
-    # Register Native Messaging Host (macOS)
-    if platform.system() == "Darwin":
-        _register_native_host()
-        rprint("[green]✅[/green] Native Host registered")
-
-    rprint("[green]✅[/green] Ready!")
-
-
-def _register_native_host():
-    host_dir = Path(
-        "~/Library/Application Support/Google/Chrome/NativeMessagingHosts"
-    ).expanduser()
-    host_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = host_dir / "com.lumos.host.json"
-
-    python_path = sys.executable
-    manifest = {
-        "name": "com.lumos.host",
-        "description": "Lumos Native Messaging Host",
-        "path": python_path,
-        "type": "stdio",
-        "allowed_origins": [],  # filled in when extension ID is known
-    }
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-
-
-# ── add ────────────────────────────────────────────────────────────────────
-@app.command()
-def add(
-    url: str,
-    title: Annotated[Optional[str], typer.Option("--title", "-t")] = None,
-    text: Annotated[Optional[str], typer.Option("--text")] = None,
-    note: Annotated[Optional[str], typer.Option("--note", "-n")] = None,
-    item_type: Annotated[str, typer.Option("--type")] = "page",
-):
-    """Add an item manually."""
-    config = load_config()
-    resolved_title = title or url
-
-    item = Item(
-        type=ItemType(item_type),
-        url=url,
-        title=resolved_title,
-        text=text,
-        note=note,
-        source=Source(via=SourceVia.WEB),
-    )
-    append_item(config.items_path(), item)
-    rprint(f"[green]✓[/green] Added: {resolved_title}")
-
-
-# ── ocr-retry ─────────────────────────────────────────────────────────────
-@app.command("ocr-retry")
-def ocr_retry():
-    """Retry OCR for images missing ocr_text."""
-    config = load_config()
-    if not config.ocr.enabled:
-        rprint("[yellow]OCR is disabled in config.[/yellow]")
-        raise typer.Exit()
-
-    items = get_all(config.items_path())
-    pending = [
-        item for item in items if item.type == ItemType.IMAGE and item.ocr_text is None
-    ]
-
-    if not pending:
-        rprint("No images pending OCR.")
-        raise typer.Exit()
-
-    rprint(f"Found {len(pending)} images pending OCR.")
-    # OCR processing would happen here when Upstage integration is wired up
-    rprint("[yellow]OCR processing not yet implemented.[/yellow]")
-
-
-# ── default: search / interactive ──────────────────────────────────────────
 def _parse_since(value: str) -> datetime:
     if value.endswith("d"):
         days = int(value[:-1])
@@ -197,70 +80,72 @@ def _parse_since(value: str) -> datetime:
 
 
 @app.callback(invoke_without_command=True)
-def main(ctx: typer.Context):
+def main(
+    ctx: typer.Context,
+    query: Annotated[Optional[List[str]], typer.Argument(help="Search terms (quoted phrases kept together)")] = None,
+    source: Annotated[Optional[str], typer.Option("--type", "-t", help="Source: web, kindle", show_default="all")] = None,
+    begin: Annotated[Optional[str], typer.Option("--begin", help="Begin date (e.g. 7d, 2026-01-01)", show_default="none")] = None,
+    end: Annotated[Optional[str], typer.Option("--end", help="End date", show_default="none")] = None,
+    limit: Annotated[Optional[int], typer.Option("--limit", "-l", help="Items per page", show_default="from config")] = None,
+    sort: Annotated[str, typer.Option("--sort", "-s", help="Sort field:dir — field: date,priority,title / dir: asc,desc (e.g. date:asc)", show_default="date:desc")] = "date",
+    include: Annotated[Optional[str], typer.Option("--include", "-i", help="Search in: title,url,text,note,ocr", show_default="all")] = None,
+    exclude: Annotated[Optional[str], typer.Option("--exclude", "-e", help="Exclude: title,url,text,note,ocr", show_default="none")] = None,
+    case: Annotated[Optional[str], typer.Option("--case", "-c", help="Case: smart, sensitive, ignore", show_default="smart")] = "smart",
+    match: Annotated[str, typer.Option("--match", "-m", help="Match mode: smart (LLM query expansion), exact", show_default="smart")] = "smart",
+):
     """Personal knowledge capture tool."""
     if ctx.invoked_subcommand is None:
-        _run_search()
+        from lumos.cli.interactive import run_tui
+        from lumos.core.config import load_config
 
+        config = load_config()
+        sort_by, desc = _parse_sort(sort)
+        lim = limit or config.list.default_limit
+        since_dt = _parse_since(begin) if begin else None
+        until_dt = _parse_since(end) if end else None
+        all_fields = ["title", "url", "text", "note", "ocr"]
+        if include:
+            fields = include.split(",")
+        elif exclude:
+            excluded = set(exclude.split(","))
+            fields = [f for f in all_fields if f not in excluded]
+        else:
+            fields = None
 
-def _run_search(
-    query: str = "",
-    source: str | None = None,
-    since: str | None = None,
-    until: str | None = None,
-    limit: int | None = None,
-    sort: str = "date",
-    desc: bool = True,
-    search_in: str | None = None,
-    case_sensitive: bool = False,
-):
-    from lumos.cli.interactive import run_tui
+        # Build query string: phrases with spaces get quoted so shlex.split reproduces them
+        if query:
+            query_str = " ".join(
+                f'"{q}"' if " " in q else q for q in query
+            )
+        else:
+            query_str = ""
 
-    config = load_config()
-    lim = limit or config.list.default_limit
-    since_dt = _parse_since(since) if since else None
-    until_dt = _parse_since(until) if until else None
-    fields = search_in.split(",") if search_in else None
+        # Smart match: expand query via LLM
+        expanded = None
+        if match == "smart" and query_str:
+            from lumos.core.llm import expand_query
+            expanded, llm_err = expand_query(query_str, config.models.llm)
+            if llm_err:
+                import sys
+                from rich import print as rprint
+                rprint(f"[red]⚠ {llm_err}[/red]", file=sys.stderr)
 
-    run_tui(
-        items_path=config.items_path(),
-        data_dir=config.get_data_dir(),
-        query=query,
-        source=source,
-        since=since_dt,
-        until=until_dt,
-        limit=lim,
-        sort_by=sort,
-        descending=desc,
-        search_in=fields,
-        case_sensitive=case_sensitive,
-    )
-
-
-@app.command("search")
-def search_cmd(
-    query: Annotated[Optional[str], typer.Argument(help="Search query")] = None,
-    source: Annotated[Optional[str], typer.Option("--source")] = None,
-    since: Annotated[Optional[str], typer.Option("--since")] = None,
-    until: Annotated[Optional[str], typer.Option("--until")] = None,
-    limit: Annotated[Optional[int], typer.Option("--limit")] = None,
-    sort: Annotated[str, typer.Option("--sort")] = "date",
-    desc: Annotated[bool, typer.Option("--desc/--asc")] = True,
-    search_in: Annotated[Optional[str], typer.Option("--in")] = None,
-    case_sensitive: Annotated[bool, typer.Option("--case-sensitive")] = False,
-):
-    """Search and browse items interactively."""
-    _run_search(
-        query=query or "",
-        source=source,
-        since=since,
-        until=until,
-        limit=limit,
-        sort=sort,
-        desc=desc,
-        search_in=search_in,
-        case_sensitive=case_sensitive,
-    )
+        run_tui(
+            items_path=config.items_path(),
+            data_dir=config.get_data_dir(),
+            query=query_str,
+            source=source,
+            since=since_dt,
+            until=until_dt,
+            limit=lim,
+            sort_by=sort_by,
+            descending=desc,
+            search_in=fields,
+            case_sensitive=case == "sensitive",
+            hl_style=_hl_style(config.theme.highlight_color),
+            sel_style=f"reverse {_rich_color(config.theme.selection_color)}",
+            expanded_terms=expanded,
+        )
 
 
 if __name__ == "__main__":

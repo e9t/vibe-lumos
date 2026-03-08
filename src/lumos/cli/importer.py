@@ -1,4 +1,4 @@
-"""Import commands for Diigo and Kindle."""
+"""Lumos Importer — for Kindle and Diigo."""
 
 from __future__ import annotations
 
@@ -13,10 +13,15 @@ import typer
 from rich import print as rprint
 
 from lumos.core.config import load_config
-from lumos.core.models import Item, ItemType, Source, SourceVia, generate_id
+from lumos.core.models import Item, ItemType, Source, SourceVia
 from lumos.core.store import append_item
 
-import_app = typer.Typer()
+app = typer.Typer(
+    name="lumos-import",
+    help="Import data from Kindle and Diigo.",
+    add_completion=False,
+    no_args_is_help=True,
+)
 
 
 # ── HTML stripping ─────────────────────────────────────────────────────────
@@ -64,7 +69,7 @@ def _iter_jsonl(file: Path):
         yield json.loads(buf, strict=False)
 
 
-@import_app.command("diigo")
+@app.command("diigo")
 def import_diigo(
     file: Annotated[Path, typer.Argument(help="Path to Diigo JSONL export")],
 ):
@@ -184,7 +189,7 @@ def _title_to_slug(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
 
 
-@import_app.command("kindle")
+@app.command("kindle")
 def import_kindle(
     file: Annotated[Path, typer.Argument(help="Path to My Clippings.txt")],
 ):
@@ -239,3 +244,7 @@ def import_kindle(
         count += 1
 
     rprint(f"[green]✓[/green] Imported {count} items from Kindle.")
+
+
+if __name__ == "__main__":
+    app()

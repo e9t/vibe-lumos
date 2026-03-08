@@ -67,6 +67,58 @@ from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, Static
 
 
+def _parse_query_terms(query: str) -> list[str]:
+    """Parse query into terms: quoted phrases stay together, bare words split."""
+    import shlex
+    try:
+        return shlex.split(query.strip())
+    except ValueError:
+        return query.strip().split()
+
+
+def _highlight_append(target: Text, text: str, query: str, style: str = "", hl_style: str = "bold on yellow") -> None:
+    """Append *text* to *target* Rich Text, highlighting all occurrences of query terms.
+
+    Quoted phrases (e.g. '"upstage url"') are matched as-is.
+    Bare words are matched independently.
+    """
+    if not query or not query.strip():
+        target.append(text, style=style)
+        return
+    terms = _parse_query_terms(query)
+    lower_text = text.lower()
+    # Build a list of (start, end) highlight spans for all terms
+    spans: list[tuple[int, int]] = []
+    for term in terms:
+        lt = term.lower()
+        pos = 0
+        while True:
+            idx = lower_text.find(lt, pos)
+            if idx < 0:
+                break
+            spans.append((idx, idx + len(lt)))
+            pos = idx + len(lt)
+    if not spans:
+        target.append(text, style=style)
+        return
+    # Merge overlapping spans
+    spans.sort()
+    merged: list[tuple[int, int]] = [spans[0]]
+    for s, e in spans[1:]:
+        if s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    pos = 0
+    for s, e in merged:
+        if s > pos:
+            target.append(text[pos:s], style=style)
+        target.append(text[s:e], style=hl_style)
+        pos = e
+    if pos < len(text):
+        target.append(text[pos:], style=style)
+
+
 class FocusableStatic(Static, can_focus=True):
     pass
 
@@ -291,9 +343,8 @@ class LumosApp(App):
         Binding("h,home", "go_first", "First", key_display="h"),
         Binding("l,end", "go_last", "Last", key_display="l"),
         Binding("slash", "search_mode", "Search", key_display="/"),
-        Binding("plus", "priority_up", "+Priority", key_display="+", show=False),
-        Binding("equal", "priority_up", "+Priority", key_display="=", show=False),
-        Binding("minus,underscore,hyphen_minus", "priority_down", "-Priority", key_display="-", show=False),
+        Binding("plus,equal", "priority_up", "Priority", key_display="+/-"),
+        Binding("minus,underscore,hyphen_minus", "priority_down", "Priority", show=False),
         Binding("n", "edit_note", "Note", show=False),
         Binding("question_mark", "show_help", "Help", key_display="?"),
         Binding("q", "quit_or_cancel", "Quit", key_display="q"),
@@ -324,6 +375,9 @@ class LumosApp(App):
         descending: bool = True,
         search_in: list[str] | None = None,
         case_sensitive: bool = False,
+        hl_style: str = "bold on yellow",
+        sel_style: str = "reverse yellow",
+        expanded_terms: list[str] | None = None,
     ):
         super().__init__()
         self.items_path = items_path
@@ -337,6 +391,16 @@ class LumosApp(App):
         self.descending = descending
         self.search_in = search_in
         self.case_sensitive = case_sensitive
+        self.hl_style = hl_style
+        self.sel_style = sel_style
+        self.expanded_terms = expanded_terms
+        # Build highlight query: include expanded terms so they get highlighted
+        if expanded_terms:
+            self._hl_query = " ".join(
+                f'"{t}"' if " " in t else t for t in expanded_terms
+            )
+        else:
+            self._hl_query = query
 
         self.groups: list[PageGroup] = []
         self.rows: list[CursorRow] = []
@@ -374,12 +438,23 @@ class LumosApp(App):
         # Direct character map (for keys that Textual bindings may miss)
         if not action:
             action = self._CHAR_KEY_MAP.get(event.character)
+        if not action:
+            # Also check event.key for keys like "plus", "minus"
+            action = {
+                "plus": "action_priority_up",
+                "equal": "action_priority_up",
+                "minus": "action_priority_down",
+                "hyphen_minus": "action_priority_down",
+            }.get(event.key)
         if action:
             getattr(self, action)()
             event.prevent_default()
             event.stop()
 
     def _load_data(self):
+        # Save expand state by URL before reload
+        old_expand = {g.page.url: (g.expanded, g.visible_children) for g in self.groups}
+
         items, self.total = search(
             self.items_path,
             query=self.query,
@@ -392,8 +467,16 @@ class LumosApp(App):
             descending=self.descending,
             limit=self.limit,
             offset=self.page_offset,
+            expanded_terms=self.expanded_terms,
         )
         self.groups = group_items(items)
+
+        # Restore expand state
+        for g in self.groups:
+            if g.page.url in old_expand:
+                expanded, vis = old_expand[g.page.url]
+                g.expanded = expanded
+                g.visible_children = min(vis, len(g.children))
         self._build_rows()
 
     def _build_rows(self):
@@ -411,6 +494,12 @@ class LumosApp(App):
     def on_resize(self, event):
         self._render()
 
+    def _should_hl(self, field: str) -> bool:
+        """Whether search highlight should apply to this field."""
+        if not self.search_in:
+            return True  # no filter → highlight everywhere
+        return field in self.search_in
+
     def _render(self):
         w = self.size.width or 80
         # Content width: w minus left marker(1) and right marker(1)
@@ -421,7 +510,12 @@ class LumosApp(App):
         cursor_y = 0  # line number where cursor row starts
 
         if self.query:
-            lines.append(Text(f' 🔍 "{self.query}", {self.total} results'))
+            header = Text(f' 🔍 "{self.query}", {self.total} results')
+            if self.expanded_terms and len(self.expanded_terms) > 1:
+                extra = [t for t in self.expanded_terms if t.lower() != self.query.strip('"').lower()]
+                if extra:
+                    header.append(f"  ← {', '.join(extra)}", style="dim italic")
+            lines.append(header)
         lines.append(Text("-" * w, style="dim"))
 
         for ri, row in enumerate(self.rows):
@@ -456,32 +550,67 @@ class LumosApp(App):
 
                 line = Text()
                 if is_selected:
-                    line.append(" ", style="reverse yellow")
+                    line.append(" ", style=self.sel_style)
                 else:
                     line.append(" ")
                 line.append(prefix, style="bold" if is_selected else "")
-                line.append(title, style="bold" if is_selected else "")
+                title_style = "bold" if is_selected else ""
+                title_q = self._hl_query if self._should_hl("title") else ""
+                _highlight_append(line, title, title_q, style=title_style, hl_style=self.hl_style)
                 if hl_badge:
                     line.append(hl_badge, style="dim")
                 line.append(" " * padding)
                 line.append(suffix, style="dim")
                 if is_selected:
-                    line.append(" ", style="reverse yellow")
+                    line.append(" ", style=self.sel_style)
 
                 lines.append(line)
 
                 # Search snippet in collapsed mode
-                if self.query and not g.expanded and g.children:
-                    for child in g.children[:1]:
-                        if child.text and self.query.lower() in child.text.lower():
-                            snip_prefix = f"{indent} · "
-                            snippet = _excerpt(child.text, self.query, width=cw - _wcswidth(snip_prefix))
-                            snip_line = Text(snip_prefix, style="dim")
-                            snip_line.append(snippet, style="dim italic")
-                            lines.append(snip_line)
+                if self.query and not g.expanded:
+                    terms = _parse_query_terms(self._hl_query)
+                    snip_prefix = f"{indent}  "
+                    snip_w = cw - _wcswidth(snip_prefix)
+                    snip_shown = False
+                    # Check URL match
+                    if self._should_hl("url") and any(t.lower() in g.page.url.lower() for t in terms):
+                        snippet = _excerpt(g.page.url, terms[0], width=snip_w)
+                        snip_line = Text(snip_prefix, style="dim")
+                        _highlight_append(snip_line, snippet, self._hl_query, style="dim italic", hl_style=self.hl_style)
+                        lines.append(snip_line)
+                        snip_shown = True
+                    # Check child fields (text, note, ocr)
+                    if not snip_shown:
+                        child_fields = [
+                            ("text", "text"),
+                            ("note", "note"),
+                            ("ocr", "ocr_text"),
+                        ]
+                        for field_name, attr_name in child_fields:
+                            if not self._should_hl(field_name):
+                                continue
+                            for child in g.children:
+                                val = getattr(child, attr_name, None)
+                                if val and any(t.lower() in val.lower() for t in terms):
+                                    snippet = _excerpt(val, terms[0], width=snip_w)
+                                    snip_line = Text(snip_prefix + "· ", style="dim")
+                                    _highlight_append(snip_line, snippet, self._hl_query, style="dim italic", hl_style=self.hl_style)
+                                    lines.append(snip_line)
+                                    snip_shown = True
+                                    break
+                            if snip_shown:
+                                break
 
-                # Separator when expanded
+                # URL + separator when expanded
                 if g.expanded:
+                    url_prefix = indent + "  "
+                    url_text = url_prefix + g.page.url
+                    url_lines = _wrap_text(url_text, cw, url_prefix)
+                    url_q = self._hl_query if self._should_hl("url") else ""
+                    for ul in url_lines:
+                        url_line = Text(" ")
+                        _highlight_append(url_line, ul, url_q, style="dim", hl_style=self.hl_style)
+                        lines.append(url_line)
                     sep_count = (w - _wcswidth(indent)) // _wcswidth("┄")
                     lines.append(Text(indent + "┄" * sep_count, style="dim"))
 
@@ -503,18 +632,19 @@ class LumosApp(App):
                     line = Text()
                     if li == 0:
                         if is_selected:
-                            line.append(" ", style="reverse yellow")
+                            line.append(" ", style=self.sel_style)
                         else:
                             line.append(" ")
                     else:
                         line.append(" ")
                     line_w = _wcswidth(hl_line_text)
-                    line.append(hl_line_text, style="")
+                    hl_q = self._hl_query if any(self._should_hl(f) for f in ("text", "note", "ocr")) else ""
+                    _highlight_append(line, hl_line_text, hl_q, hl_style=self.hl_style)
                     if is_selected and li == 0:
                         pad = cw - line_w
                         if pad > 0:
                             line.append(" " * pad)
-                        line.append(" ", style="reverse yellow")
+                        line.append(" ", style=self.sel_style)
                     lines.append(line)
 
                 # Note for images
@@ -544,7 +674,7 @@ class LumosApp(App):
                 remaining = row.group.remaining
                 line = Text()
                 if is_selected:
-                    line.append(" ", style="reverse yellow")
+                    line.append(" ", style=self.sel_style)
                 else:
                     line.append(" ")
                 line.append(
@@ -579,10 +709,20 @@ class LumosApp(App):
         if self.cursor < len(self.rows) - 1:
             self.cursor += 1
             self._render()
+        elif self.page_offset + self.limit < self.total:
+            self.page_offset += self.limit
+            self.cursor = 0
+            self._load_data()
+            self._render()
 
     def action_cursor_up(self):
         if self.cursor > 0:
             self.cursor -= 1
+            self._render()
+        elif self.page_offset > 0:
+            self.page_offset = max(0, self.page_offset - self.limit)
+            self._load_data()
+            self.cursor = max(0, len(self.rows) - 1)
             self._render()
 
     def action_go_first(self):
@@ -705,7 +845,7 @@ class LumosApp(App):
             update_item(
                 self.items_path,
                 row.item.id,
-                lambda item: item.model_copy(update={"priority": item.priority + 1}),
+                lambda it: it.model_copy(update={"priority": it.priority + 1}),
             )
             self._load_data()
             self._render()
@@ -716,7 +856,7 @@ class LumosApp(App):
             update_item(
                 self.items_path,
                 row.item.id,
-                lambda item: item.model_copy(update={"priority": item.priority - 1}),
+                lambda it: it.model_copy(update={"priority": it.priority - 1}),
             )
             self._load_data()
             self._render()
@@ -795,6 +935,9 @@ def run_tui(
     descending: bool = True,
     search_in: list[str] | None = None,
     case_sensitive: bool = False,
+    hl_style: str = "bold on yellow",
+    sel_style: str = "reverse yellow",
+    expanded_terms: list[str] | None = None,
 ):
     app = LumosApp(
         items_path=items_path,
@@ -808,5 +951,8 @@ def run_tui(
         descending=descending,
         search_in=search_in,
         case_sensitive=case_sensitive,
+        hl_style=hl_style,
+        sel_style=sel_style,
+        expanded_terms=expanded_terms,
     )
     app.run()

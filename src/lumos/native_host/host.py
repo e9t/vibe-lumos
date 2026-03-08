@@ -91,9 +91,17 @@ def _handle(message: dict) -> dict:
             note=message.get("note"),
             source=Source(via=SourceVia.WEB),
         )
+        # Run OCR on the saved image
+        from lumos.core.ocr import extract_text
+        ocr_text, ocr_err = extract_text(media_path, config.models.ocr)
+        if ocr_text:
+            item.ocr_text = ocr_text
+
         saved = append_item(items_path, item)
-        # OCR would be triggered asynchronously here
-        return {"ok": True, "item": json.loads(saved.model_dump_json())}
+        result = {"ok": True, "item": json.loads(saved.model_dump_json())}
+        if ocr_err:
+            result["ocr_error"] = ocr_err
+        return result
 
     elif action == "save_page":
         import base64
@@ -106,13 +114,13 @@ def _handle(message: dict) -> dict:
         )
 
         # Handle cache
-        cache_mode = config.cache.mode
+        cache_formats = config.cache.formats
         mhtml_data = None
         readable_text = None
 
-        if cache_mode in ("both", "mhtml") and "mhtml_data" in message:
+        if "mhtml" in cache_formats and "mhtml_data" in message:
             mhtml_data = base64.b64decode(message["mhtml_data"])
-        if cache_mode in ("both", "readable") and "readable_text" in message:
+        if "readable" in cache_formats and "readable_text" in message:
             readable_text = message["readable_text"]
 
         if mhtml_data or readable_text:

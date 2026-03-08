@@ -110,6 +110,7 @@ def search(
     descending: bool = True,
     limit: int = 10,
     offset: int = 0,
+    expanded_terms: Optional[list[str]] = None,
 ) -> tuple[list[Item], int]:
     all_items = _read_all(path)
 
@@ -124,28 +125,66 @@ def search(
         all_items = [item for item in all_items if item.created_at <= until]
 
     # Text search: find matching URLs (if any item matches, include its whole page group)
-    if query:
-        fields = search_in or ["title", "text", "note", "ocr"]
-        q = query if case_sensitive else query.lower()
+    if query or expanded_terms:
+        fields = search_in or ["title", "url", "text", "note", "ocr"]
+        import shlex
+        try:
+            terms = shlex.split(query.strip()) if query else []
+        except ValueError:
+            terms = query.strip().split() if query else []
+        terms = [t if case_sensitive else t.lower() for t in terms]
 
-        def matches(item: Item) -> bool:
+        def _get_field(item: Item, field: str) -> str | None:
+            if field == "title":
+                return item.title
+            elif field == "url":
+                return item.url
+            elif field == "text":
+                return item.text
+            elif field == "note":
+                return item.note
+            elif field == "ocr":
+                return item.ocr_text
+            return None
+
+        def item_has_term(item: Item, term: str) -> bool:
             for field in fields:
-                val = None
-                if field == "title":
-                    val = item.title
-                elif field == "text":
-                    val = item.text
-                elif field == "note":
-                    val = item.note
-                elif field == "ocr":
-                    val = item.ocr_text
+                val = _get_field(item, field)
                 if val:
                     check = val if case_sensitive else val.lower()
-                    if q in check:
+                    if term in check:
                         return True
             return False
 
-        matching_urls = {item.url for item in all_items if matches(item)}
+        # Group items by URL
+        from collections import defaultdict
+        url_items: dict[str, list[Item]] = defaultdict(list)
+        for item in all_items:
+            url_items[item.url].append(item)
+
+        matching_urls: set[str] = set()
+
+        if expanded_terms:
+            # Smart match: OR logic — any expanded term matches
+            exp = [t if case_sensitive else t.lower() for t in expanded_terms]
+            for url, items_in_url in url_items.items():
+                if any(
+                    item_has_term(item, term)
+                    for term in exp
+                    for item in items_in_url
+                ):
+                    matching_urls.add(url)
+        else:
+            # Exact match: AND logic — all terms must match across the group
+            for url, items_in_url in url_items.items():
+                all_terms_found = True
+                for term in terms:
+                    if not any(item_has_term(item, term) for item in items_in_url):
+                        all_terms_found = False
+                        break
+                if all_terms_found:
+                    matching_urls.add(url)
+
         all_items = [item for item in all_items if item.url in matching_urls]
 
     # Collect all pages and sort them

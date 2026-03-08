@@ -13,14 +13,8 @@ CONFIG_PATH = Path("~/.config/lumos.json").expanduser()
 DEFAULT_DATA_DIR = Path("~/.lumos").expanduser()
 
 
-class ExtensionConfig(BaseModel):
-    shortcut_save_page: str = "Ctrl+D"
-    highlight_color: str = "#FFEB3B"
-    mini_toolbar: bool = True
-
-
 class CacheConfig(BaseModel):
-    mode: str = "both"  # both | mhtml | readable | none
+    formats: list[str] = Field(default_factory=lambda: ["mhtml", "readable"])
 
 
 class OcrConfig(BaseModel):
@@ -30,16 +24,32 @@ class OcrConfig(BaseModel):
     retry_max: int = 3
 
 
+class LlmConfig(BaseModel):
+    model: str = "solar-mini"
+    api_key_env: str = "UPSTAGE_API_KEY"
+    base_url: str = "https://api.upstage.ai/v1"
+
+
+class ModelsConfig(BaseModel):
+    ocr: OcrConfig = Field(default_factory=OcrConfig)
+    llm: LlmConfig = Field(default_factory=LlmConfig)
+
+
 class ListConfig(BaseModel):
     default_limit: int = 10
 
 
+class ThemeConfig(BaseModel):
+    highlight_color: str = "yellow"         # search match bg: yellow, orange, green, etc.
+    selection_color: str = "yellow"         # selected row marker color
+
+
 class LumosConfig(BaseModel):
     data_dir: str = str(DEFAULT_DATA_DIR)
-    extension: ExtensionConfig = Field(default_factory=ExtensionConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
-    ocr: OcrConfig = Field(default_factory=OcrConfig)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
     list: ListConfig = Field(default_factory=ListConfig)
+    theme: ThemeConfig = Field(default_factory=ThemeConfig)
 
     def get_data_dir(self) -> Path:
         env_override = os.environ.get("LUMOS_DATA_DIR")
