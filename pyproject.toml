@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lumos"
+version = "0.1.0"
+description = "Personal knowledge capture tool"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "typer>=0.9",
+    "rich>=13.0",
+    "textual>=0.50",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+lumos = "lumos.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lumos"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
