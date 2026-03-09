@@ -230,6 +230,58 @@ def _handle(message: dict) -> dict:
             return {"ok": True, "priority": updated.priority}
         return {"ok": False, "error": "Item not found"}
 
+    elif action == "cache_page":
+        import base64
+
+        url = message.get("url", "")
+        title = message.get("title", "")
+
+        # Find or create PAGE item
+        existing_pages = [
+            i for i in get_by_url(items_path, url)
+            if i.type == ItemType.PAGE
+        ]
+
+        if existing_pages:
+            page = existing_pages[0]
+        else:
+            # Auto-create page entry if not saved yet
+            page = Item(
+                type=ItemType.PAGE,
+                url=url,
+                title=title,
+                source=Source(via=SourceVia.WEB),
+            )
+            page = append_item(items_path, page)
+
+        # Save cache files
+        mhtml_data = None
+        readable_text = None
+
+        cache_formats = config.cache.formats
+        if "mhtml" in cache_formats and message.get("mhtml_data"):
+            mhtml_data = base64.b64decode(message["mhtml_data"])
+        if "readable" in cache_formats and message.get("readable_text"):
+            readable_text = message["readable_text"]
+
+        if not mhtml_data and not readable_text:
+            return _error("No cache data provided")
+
+        cache_result = save_cache(
+            config.cache_dir(), page.id, mhtml_data, readable_text
+        )
+        saved = update_item(
+            items_path, page.id,
+            lambda it: it.model_copy(update={
+                "title": title or it.title,
+                "cache": Cache(
+                    mhtml=cache_result.get("mhtml"),
+                    readable=cache_result.get("readable"),
+                ),
+            }),
+        )
+        return {"ok": True, "item": json.loads(saved.model_dump_json())}
+
     elif action == "get_cache":
         url = message.get("url", "")
         pages = [i for i in get_by_url(items_path, url) if i.type == ItemType.PAGE]

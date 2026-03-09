@@ -68,11 +68,14 @@ function renderItems(items) {
     delPageBtn.classList.remove('hidden');
     priUp.classList.remove('hidden');
     priDown.classList.remove('hidden');
-    // Show cache button only if page has a cache
+    cacheBtn.classList.remove('hidden');
+    // Update cache button label based on whether cache exists
     if (_pageItem.cache?.readable) {
-      cacheBtn.classList.remove('hidden');
+      cacheBtn.textContent = '📋 View Cache';
+      cacheBtn.title = 'View cached page';
     } else {
-      cacheBtn.classList.add('hidden');
+      cacheBtn.textContent = '📋 Cache';
+      cacheBtn.title = 'Cache this page';
     }
   } else {
     delPageBtn.classList.add('hidden');
@@ -215,23 +218,60 @@ async function init() {
   document.getElementById('btn-pri-up').addEventListener('click', () => updatePagePriority(1));
   document.getElementById('btn-pri-down').addEventListener('click', () => updatePagePriority(-1));
 
-  // View Cache button
+  // Cache button: create cache if none exists, view if it does
   document.getElementById('btn-view-cache').addEventListener('click', async () => {
     if (!_currentTab?.url) return;
     const btn = document.getElementById('btn-view-cache');
     btn.disabled = true;
+
     try {
-      const resp = await chrome.runtime.sendMessage({ type: 'GET_CACHE', url: _currentTab.url });
-      if (resp?.ok) {
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${resp.title} — Lumos Cache</title>`
-          + `<style>body{max-width:720px;margin:2em auto;padding:0 1em;font:16px/1.6 system-ui,sans-serif;color:#333}`
-          + `pre{white-space:pre-wrap;word-wrap:break-word}</style></head>`
-          + `<body><h1>${resp.title}</h1><pre>${resp.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</pre></body></html>`;
-        const blob = new Blob([html], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        chrome.tabs.create({ url });
+      if (_pageItem?.cache?.readable) {
+        // View existing cache
+        const resp = await chrome.runtime.sendMessage({ type: 'GET_CACHE', url: _currentTab.url });
+        if (resp?.ok) {
+          // Render markdown as styled HTML
+          const escaped = resp.text.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+          const rendered = escaped
+            .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+            .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+            .replace(/^- (.+)$/gm, '<li>$1</li>')
+            .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
+            .replace(/\n{2,}/g, '</p><p>')
+            .replace(/^---$/gm, '<hr>');
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${resp.title} — Lumos Cache</title>`
+            + `<style>body{max-width:720px;margin:2em auto;padding:0 1em;font:16px/1.6 system-ui,sans-serif;color:#333}`
+            + `a{color:#1a73e8}code{background:#f5f5f5;padding:2px 4px;border-radius:3px;font-size:0.9em}`
+            + `pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}`
+            + `blockquote{border-left:3px solid #ddd;margin:0;padding-left:1em;color:#666}`
+            + `h1,h2,h3,h4{margin-top:1.5em}li{margin:0.3em 0}</style></head>`
+            + `<body><h1>${resp.title}</h1><div>${rendered}</div></body></html>`;
+          const blob = new Blob([html], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          chrome.tabs.create({ url });
+        } else {
+          showStatus(resp?.error || 'No cache available', 'error');
+        }
       } else {
-        showStatus(resp?.error || 'No cache available', 'error');
+        // Create cache on-demand
+        btn.textContent = '⏳ Caching…';
+        const resp = await chrome.runtime.sendMessage({
+          type: 'CACHE_PAGE',
+          tabId: _currentTab.id,
+          url: _currentTab.url,
+          title: _currentTab.title || '',
+        });
+        if (resp?.ok) {
+          showStatus('Page cached ✓', 'ok');
+          await refreshItems();
+        } else {
+          showStatus(resp?.error || 'Cache failed', 'error');
+        }
       }
     } catch (e) {
       showStatus(e.message || 'Error', 'error');

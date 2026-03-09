@@ -106,16 +106,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   } catch (_) {}
 });
 
-// ─── Save Page (Cmd+D) ────────────────────────────────────────────────────────
-
-// Injected into the page to extract readable text
-function _extractReadableText() {
-  const clone = document.cloneNode(true);
-  for (const el of clone.querySelectorAll('script, style, nav, footer, header, aside')) {
-    el.remove();
-  }
-  return (clone.body?.innerText || '').slice(0, 50000);
-}
+// ─── Save Page (Cmd+D) — bookmark only, no cache ────────────────────────────
 
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'save-page') return;
@@ -123,37 +114,11 @@ chrome.commands.onCommand.addListener(async (command) => {
   if (!tab?.url || tab.url.startsWith('chrome://')) return;
 
   const pageUrl = normalizeUrl(tab.url);
-
-  let readableText = null;
-  try {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: _extractReadableText,
-    });
-    readableText = result;
-  } catch (_) {}
-
-  let mhtmlBase64 = null;
-  try {
-    const mhtmlBlob = await new Promise((resolve) => {
-      chrome.pageCapture.saveAsMHTML({ tabId: tab.id }, resolve);
-    });
-    if (mhtmlBlob) {
-      const buf = await mhtmlBlob.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      let binary = '';
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-      mhtmlBase64 = btoa(binary);
-    }
-  } catch (_) {}
-
   try {
     const response = await sendToHost({
       action: 'save_page',
       url: pageUrl,
       title: tab.title || '',
-      readable_text: readableText,
-      mhtml_data: mhtmlBase64,
     });
     await flashBadge(tab.id, response.ok);
   } catch (e) {
@@ -161,6 +126,77 @@ chrome.commands.onCommand.addListener(async (command) => {
     await flashBadge(tab.id, false);
   }
 });
+
+// ─── Cache helpers ───────────────────────────────────────────────────────────
+
+/** Injected into the page to extract readable markdown-like text */
+function _extractReadableMarkdown() {
+  const clone = document.cloneNode(true);
+  for (const el of clone.querySelectorAll(
+    'script, style, nav, footer, header, aside, .sidebar, [role="navigation"], [role="banner"], [role="complementary"]'
+  )) {
+    el.remove();
+  }
+  const main = clone.querySelector('main, article, [role="main"]') || clone.body;
+  if (!main) return '';
+
+  function walk(node) {
+    if (node.nodeType === 3) return node.textContent;
+    if (node.nodeType !== 1) return '';
+    const tag = node.tagName.toLowerCase();
+    if (node.hidden) return '';
+    const kids = () => Array.from(node.childNodes).map(walk).join('');
+    switch (tag) {
+      case 'h1': return '\n# ' + kids().trim() + '\n';
+      case 'h2': return '\n## ' + kids().trim() + '\n';
+      case 'h3': return '\n### ' + kids().trim() + '\n';
+      case 'h4': case 'h5': case 'h6':
+        return '\n#### ' + kids().trim() + '\n';
+      case 'p': return '\n' + kids().trim() + '\n';
+      case 'br': return '\n';
+      case 'a': {
+        const href = node.getAttribute('href');
+        const text = kids().trim();
+        if (!text) return '';
+        if (href && href.startsWith('http')) return '[' + text + '](' + href + ')';
+        return text;
+      }
+      case 'strong': case 'b': return '**' + kids().trim() + '**';
+      case 'em': case 'i': return '*' + kids().trim() + '*';
+      case 'code': return '`' + kids().trim() + '`';
+      case 'pre': return '\n```\n' + (node.textContent || '').trim() + '\n```\n';
+      case 'blockquote': return '\n> ' + kids().trim().replace(/\n/g, '\n> ') + '\n';
+      case 'li': return '- ' + kids().trim() + '\n';
+      case 'ul': case 'ol': return '\n' + kids();
+      case 'img': {
+        const alt = node.getAttribute('alt');
+        return alt ? '[image: ' + alt + ']' : '';
+      }
+      case 'hr': return '\n---\n';
+      case 'div': case 'section': case 'article': case 'main':
+        return '\n' + kids();
+      default: return kids();
+    }
+  }
+  const md = walk(main).replace(/\n{3,}/g, '\n\n').trim();
+  return md.slice(0, 50000);
+}
+
+async function _captureMhtml(tabId) {
+  try {
+    const mhtmlBlob = await new Promise((resolve) => {
+      chrome.pageCapture.saveAsMHTML({ tabId }, resolve);
+    });
+    if (!mhtmlBlob) return null;
+    const buf = await mhtmlBlob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  } catch (_) {
+    return null;
+  }
+}
 
 // ─── Context Menu: Save Image ─────────────────────────────────────────────────
 
@@ -298,7 +334,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'SAVE_PAGE_NOW') {
-    // Called from popup — save specific tab
+    // Called from popup — bookmark only, no cache
+    (async () => {
+      const { tabId, url, title } = message;
+      try {
+        const pageUrl = normalizeUrl(url);
+        const response = await sendToHost({
+          action: 'save_page',
+          url: pageUrl,
+          title,
+        });
+
+        if (response.ok) {
+          await flashBadge(tabId, true);
+          chrome.tabs.sendMessage(tabId, { type: 'PAGE_SAVED' }).catch(() => {});
+        }
+        sendResponse(response);
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'CACHE_PAGE') {
+    // On-demand cache: extract readable markdown + MHTML
     (async () => {
       const { tabId, url, title } = message;
       try {
@@ -308,37 +368,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
           const [{ result }] = await chrome.scripting.executeScript({
             target: { tabId },
-            func: _extractReadableText,
+            func: _extractReadableMarkdown,
           });
           readableText = result;
         } catch (_) {}
 
-        let mhtmlBase64 = null;
-        try {
-          const mhtmlBlob = await new Promise((resolve) => {
-            chrome.pageCapture.saveAsMHTML({ tabId }, resolve);
-          });
-          if (mhtmlBlob) {
-            const buf = await mhtmlBlob.arrayBuffer();
-            const bytes = new Uint8Array(buf);
-            let binary = '';
-            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-            mhtmlBase64 = btoa(binary);
-          }
-        } catch (_) {}
+        const mhtmlBase64 = await _captureMhtml(tabId);
 
         const response = await sendToHost({
-          action: 'save_page',
+          action: 'cache_page',
           url: pageUrl,
           title,
           readable_text: readableText,
           mhtml_data: mhtmlBase64,
         });
-
-        if (response.ok) {
-          await flashBadge(tabId, true);
-          chrome.tabs.sendMessage(tabId, { type: 'PAGE_SAVED' }).catch(() => {});
-        }
         sendResponse(response);
       } catch (e) {
         sendResponse({ ok: false, error: e.message });

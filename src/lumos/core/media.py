@@ -29,7 +29,7 @@ def save_media(media_dir: Path, data: bytes, ext: str = "png") -> str:
 def generate_cache_paths(cache_dir: Path, item_id: str) -> dict[str, str]:
     return {
         "mhtml": f"cache/{item_id}.mhtml",
-        "readable": f"cache/{item_id}.txt",
+        "readable": f"cache/{item_id}.md",
     }
 
 
@@ -43,9 +43,9 @@ def save_cache(cache_dir: Path, item_id: str, mhtml: bytes | None = None, readab
         result["mhtml"] = f"cache/{item_id}.mhtml"
 
     if readable is not None:
-        txt_path = cache_dir / f"{item_id}.txt"
-        txt_path.write_text(readable)
-        result["readable"] = f"cache/{item_id}.txt"
+        md_path = cache_dir / f"{item_id}.md"
+        md_path.write_text(readable, encoding="utf-8")
+        result["readable"] = f"cache/{item_id}.md"
 
     return result
 
