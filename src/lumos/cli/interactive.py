@@ -289,7 +289,7 @@ class HelpScreen(ModalScreen[None]):
  [bold]Enter[/bold]   Expand / collapse   [bold]e[/bold]       Expand all
  [bold]/[/bold]       Search              [bold]x[/bold]       Delete
  [bold]+/-[/bold]     Priority up/down    [bold]n[/bold]       Edit note
- [bold]o[/bold]       Open URL in browser
+ [bold]o[/bold]       Open URL in browser [bold]r[/bold]       Refresh
  [bold]?[/bold]       This help           [bold]Esc[/bold]     Quit / Cancel
 
 Press any key to close."""
@@ -350,6 +350,7 @@ class LumosApp(App):
         Binding("minus,underscore,hyphen_minus", "priority_down", "Priority", show=False),
         Binding("n", "edit_note", "Note", show=False),
         Binding("o", "open_url", "Open", key_display="o"),
+        Binding("r", "refresh", "Refresh", key_display="r"),
         Binding("question_mark", "show_help", "Help", key_display="?"),
         Binding("q", "quit_or_cancel", "Quit", key_display="q"),
         Binding("escape", "quit_or_cancel", "Quit", show=False),
@@ -367,6 +368,7 @@ class LumosApp(App):
         "ㅣ": "action_go_last",
         "ㅂ": "action_quit_or_cancel",
         "ㅐ": "action_open_url",
+        "ㄱ": "action_refresh",
     }
 
     def __init__(
@@ -923,6 +925,10 @@ class LumosApp(App):
                     self._render()
 
             self.push_screen(NoteScreen(current_note), on_note)
+
+    def action_refresh(self):
+        self._load_data()
+        self._render()
 
     def action_show_help(self):
         self.push_screen(HelpScreen())

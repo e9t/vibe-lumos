@@ -27,6 +27,7 @@ lumos = "lumos.cli.main:app"
 lumos-host = "lumos.native_host.host:main"
 lumos-import = "lumos.cli.importer:app"
 lumos-init = "lumos.cli.initializer:app"
+lumos-update-priorities = "lumos.cli.update_priorities:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lumos"]
