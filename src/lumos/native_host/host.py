@@ -142,9 +142,9 @@ def _handle(message: dict) -> dict:
         mhtml_data = None
         readable_text = None
 
-        if "mhtml" in cache_formats and "mhtml_data" in message:
+        if "mhtml" in cache_formats and message.get("mhtml_data"):
             mhtml_data = base64.b64decode(message["mhtml_data"])
-        if "readable" in cache_formats and "readable_text" in message:
+        if "readable" in cache_formats and message.get("readable_text"):
             readable_text = message["readable_text"]
 
         if existing_pages:
