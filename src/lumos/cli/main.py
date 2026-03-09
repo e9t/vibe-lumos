@@ -27,6 +27,7 @@ class _LumosGroup(typer.core.TyperGroup):
         tbl.add_column()
         tbl.add_row("lumos-init", "Initialize Lumos and register the native messaging host.")
         tbl.add_row("lumos-import", "Import data from Kindle and Diigo.")
+        tbl.add_row("lumos-update-priorities", "Apply priority-updates.jsonl to items.jsonl.")
 
         Console().print(Panel(tbl, title="External Commands", title_align="left", border_style="dim"))
 
