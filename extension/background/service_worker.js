@@ -258,6 +258,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       try {
         const pageUrl = normalizeUrl(message.url);
+        // Ensure the page is saved first
+        const check = await sendToHost({ action: 'check_url', url: pageUrl });
+        if (!check.ok || !check.ids.length) {
+          await sendToHost({
+            action: 'save_page',
+            url: pageUrl,
+            title: message.title || '',
+          });
+        }
         const response = await sendToHost({
           action: 'save_highlight',
           url: pageUrl,
