@@ -19,11 +19,22 @@ body {
 
 .header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px 8px;
+  flex-direction: column;
+  padding: 8px 12px;
   border-bottom: 1px solid #2e2e2e;
   flex-shrink: 0;
+  gap: 6px;
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page-actions {
+  padding-top: 4px;
+  border-top: 1px solid #242424;
 }
 
 .logo {
@@ -36,6 +47,26 @@ body {
   display: flex;
   gap: 4px;
   align-items: center;
+}
+
+.cache-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  gap: 2px;
+}
+
+.cache-toggle input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #4CAF50;
+}
+
+.cache-toggle-label {
+  font-size: 12px;
+  line-height: 1;
 }
 
 .header-btn {
@@ -52,6 +83,23 @@ body {
 
 .header-btn:hover {
   background: #3a3a3a;
+}
+
+.header-btn.primary {
+  background: #2d4a2d;
+  color: #8fd88f;
+}
+
+.header-btn.primary:hover {
+  background: #3a5e3a;
+}
+
+.header-btn.danger {
+  color: #e07070;
+}
+
+.header-btn.danger:hover {
+  background: #4a2d2d;
 }
 
 .header-btn.hidden {
@@ -176,6 +224,38 @@ body {
   font-size: 12px;
   margin-top: 3px;
   font-style: italic;
+}
+
+.item-image {
+  margin: 4px 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #2a2a2a;
+}
+
+.item-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.item-image-fallback {
+  padding: 8px;
+  text-align: center;
+}
+
+.item-image-alt {
+  color: #888;
+  font-size: 11px;
+}
+
+.item-ocr {
+  color: #999;
+  font-size: 11px;
+  font-style: italic;
+  margin-top: 3px;
 }
 
 .item-meta {

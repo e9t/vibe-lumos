@@ -109,21 +109,55 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 // ─── Save Page (Cmd+D) — bookmark only, no cache ────────────────────────────
 
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command !== 'save-page') return;
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.url || tab.url.startsWith('chrome://')) return;
+  if (command === 'save-page') {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.url || tab.url.startsWith('chrome://')) return;
 
-  const pageUrl = normalizeUrl(tab.url);
-  try {
-    const response = await sendToHost({
-      action: 'save_page',
-      url: pageUrl,
-      title: tab.title || '',
-    });
-    await flashBadge(tab.id, response.ok);
-  } catch (e) {
-    console.error('Lumos: save-page command failed', e);
-    await flashBadge(tab.id, false);
+    const pageUrl = normalizeUrl(tab.url);
+    try {
+      const response = await sendToHost({
+        action: 'save_page',
+        url: pageUrl,
+        title: tab.title || '',
+      });
+      await flashBadge(tab.id, response.ok);
+    } catch (e) {
+      console.error('Lumos: save-page command failed', e);
+      await flashBadge(tab.id, false);
+    }
+  }
+
+  if (command === 'cache-page') {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.url || tab.url.startsWith('chrome://')) return;
+
+    const pageUrl = normalizeUrl(tab.url);
+    try {
+      // Save page first
+      await sendToHost({ action: 'save_page', url: pageUrl, title: tab.title || '' });
+
+      // Then cache
+      let readableText = null;
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: _extractReadableMarkdown,
+        });
+        readableText = result;
+      } catch (_) {}
+      const mhtmlBase64 = await _captureMhtml(tab.id);
+      const response = await sendToHost({
+        action: 'cache_page',
+        url: pageUrl,
+        title: tab.title || '',
+        readable_text: readableText,
+        mhtml_data: mhtmlBase64,
+      });
+      await flashBadge(tab.id, response.ok);
+    } catch (e) {
+      console.error('Lumos: cache-page command failed', e);
+      await flashBadge(tab.id, false);
+    }
   }
 });
 
@@ -313,6 +347,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'UPDATE_PRIORITY') {
     sendToHost({ action: 'update_priority', id: message.id, delta: message.delta })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (message.type === 'GET_MEDIA') {
+    const payload = { action: 'get_media', path: message.path };
+    if (message.max_dim !== undefined) payload.max_dim = message.max_dim;
+    sendToHost(payload)
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: e.message }));
     return true;

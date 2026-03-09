@@ -46,7 +46,7 @@ async function deletePageAndAll() {
     await chrome.runtime.sendMessage({ type: 'DELETE_ITEM', id: item.id });
   }
   _pageItem = null;
-  document.getElementById('btn-delete-page').classList.add('hidden');
+  document.getElementById('page-actions').classList.add('hidden');
   await refreshItems();
   showStatus('Page deleted', 'ok');
 }
@@ -55,33 +55,24 @@ function renderItems(items) {
   const list = document.getElementById('items-list');
   const empty = document.getElementById('empty');
   const loading = document.getElementById('loading');
-  const delPageBtn = document.getElementById('btn-delete-page');
-
   loading.classList.add('hidden');
 
   // Find page item
   _pageItem = items.find(i => i.type === 'page') || null;
-  const priUp = document.getElementById('btn-pri-up');
-  const priDown = document.getElementById('btn-pri-down');
+  const pageActions = document.getElementById('page-actions');
   const cacheBtn = document.getElementById('btn-view-cache');
   if (_pageItem) {
-    delPageBtn.classList.remove('hidden');
-    priUp.classList.remove('hidden');
-    priDown.classList.remove('hidden');
-    cacheBtn.classList.remove('hidden');
+    pageActions.classList.remove('hidden');
     // Update cache button label based on whether cache exists
     if (_pageItem.cache?.readable) {
-      cacheBtn.textContent = '📋 View Cache';
+      cacheBtn.textContent = '📋 View';
       cacheBtn.title = 'View cached page';
     } else {
       cacheBtn.textContent = '📋 Cache';
       cacheBtn.title = 'Cache this page';
     }
   } else {
-    delPageBtn.classList.add('hidden');
-    priUp.classList.add('hidden');
-    priDown.classList.add('hidden');
-    cacheBtn.classList.add('hidden');
+    pageActions.classList.add('hidden');
   }
 
   if (!items.length) {
@@ -128,7 +119,49 @@ function renderItems(items) {
 
       li.appendChild(headerEl);
 
-      if (item.text) {
+      if (item.type === 'image' && item.media) {
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'item-image';
+        const img = document.createElement('img');
+        img.alt = item.note || item.ocr_text || 'Saved image';
+        img.loading = 'lazy';
+        // Hide broken image icon, show alt text styled
+        img.addEventListener('error', () => {
+          imgContainer.classList.add('item-image-fallback');
+          img.style.display = 'none';
+          const fallback = document.createElement('div');
+          fallback.className = 'item-image-alt';
+          fallback.textContent = `📷 ${item.media}`;
+          imgContainer.appendChild(fallback);
+        });
+        imgContainer.appendChild(img);
+        li.appendChild(imgContainer);
+        // Load thumbnail async via native host
+        chrome.runtime.sendMessage({ type: 'GET_MEDIA', path: item.media }).then(resp => {
+          if (resp?.ok) {
+            img.src = `data:${resp.mime};base64,${resp.data}`;
+            // Click to open full-size image in new tab
+            img.style.cursor = 'pointer';
+            img.addEventListener('click', () => {
+              // Request full-size image
+              chrome.runtime.sendMessage({ type: 'GET_MEDIA', path: item.media, max_dim: 0 }).then(full => {
+                if (full?.ok) {
+                  const url = `data:${full.mime};base64,${full.data}`;
+                  chrome.tabs.create({ url });
+                }
+              });
+            });
+          } else {
+            img.dispatchEvent(new Event('error'));
+          }
+        }).catch(() => { img.dispatchEvent(new Event('error')); });
+        if (item.ocr_text) {
+          const ocrEl = document.createElement('div');
+          ocrEl.className = 'item-text item-ocr';
+          ocrEl.textContent = item.ocr_text.length > 120 ? item.ocr_text.slice(0, 117) + '…' : item.ocr_text;
+          li.appendChild(ocrEl);
+        }
+      } else if (item.text) {
         const textEl = document.createElement('div');
         textEl.className = 'item-text highlight-text clickable';
         textEl.textContent = item.text.length > 120 ? item.text.slice(0, 117) + '…' : item.text;
@@ -198,7 +231,24 @@ async function init() {
       });
 
       if (response?.ok) {
-        showStatus('Page saved ✓', 'ok');
+        // If cache checkbox is checked, also cache the page
+        const wantCache = document.getElementById('chk-cache').checked;
+        if (wantCache) {
+          btn.textContent = '⏳ Caching…';
+          const cacheResp = await chrome.runtime.sendMessage({
+            type: 'CACHE_PAGE',
+            tabId: tab.id,
+            url: tab.url,
+            title: tab.title || '',
+          });
+          if (cacheResp?.ok) {
+            showStatus('Page saved + cached ✓', 'ok');
+          } else {
+            showStatus('Saved, but cache failed', 'error');
+          }
+        } else {
+          showStatus('Page saved ✓', 'ok');
+        }
         await refreshItems();
       } else {
         showStatus(response?.error || 'Save failed', 'error');

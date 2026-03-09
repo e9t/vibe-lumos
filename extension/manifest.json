@@ -50,6 +50,13 @@
         "mac": "MacCtrl+D"
       },
       "description": "Save page to Lumos"
+    },
+    "cache-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+D",
+        "mac": "MacCtrl+Shift+D"
+      },
+      "description": "Save page with cache to Lumos"
     }
   }
 }

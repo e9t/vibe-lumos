@@ -59,6 +59,62 @@ def _wrap_text(text: str, max_width: int, continuation_indent: str = "") -> list
     return [result[0]] + [continuation_indent + l for l in result[1:]]
 
 
+def _render_image_half_blocks(
+    image_path: Path, max_cols: int = 50, max_rows: int = 12
+) -> Text | None:
+    """Render image as half-block (▀) characters with RGB colors.
+
+    Each terminal cell uses ▀ with fg=top pixel, bg=bottom pixel,
+    giving 2 vertical pixels per character row.
+    """
+    try:
+        from PIL import Image
+        from rich.color import Color
+        from rich.style import Style
+    except ImportError:
+        return None
+
+    try:
+        img = Image.open(image_path).convert("RGB")
+    except Exception:
+        return None
+
+    w, h = img.size
+    # Target pixel dimensions preserving aspect ratio
+    target_w = min(max_cols, w)
+    target_h = int(h * target_w / w)
+    # Ensure even height (need pairs of pixel rows)
+    if target_h % 2 != 0:
+        target_h += 1
+    # Limit character rows
+    if target_h > max_rows * 2:
+        target_h = max_rows * 2
+        target_w = int(w * target_h / h)
+        if target_w < 1:
+            target_w = 1
+
+    img = img.resize((target_w, target_h), Image.LANCZOS)
+    pixels = img.load()
+
+    text = Text()
+    for y in range(0, target_h, 2):
+        for x in range(target_w):
+            r1, g1, b1 = pixels[x, y]
+            if y + 1 < target_h:
+                r2, g2, b2 = pixels[x, y + 1]
+            else:
+                r2, g2, b2 = 0, 0, 0
+            style = Style(
+                color=Color.from_rgb(r1, g1, b1),
+                bgcolor=Color.from_rgb(r2, g2, b2),
+            )
+            text.append("▀", style=style)
+        if y + 2 < target_h:
+            text.append("\n")
+
+    return text
+
+
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -289,7 +345,7 @@ class HelpScreen(ModalScreen[None]):
  [bold]Enter[/bold]   Expand / collapse   [bold]e[/bold]       Expand all
  [bold]/[/bold]       Search              [bold]x[/bold]       Delete
  [bold]+/-[/bold]     Priority up/down    [bold]n[/bold]       Edit note
- [bold]o[/bold]       Open URL in browser [bold]r[/bold]       Refresh
+ [bold]o[/bold]       Open URL / image    [bold]r[/bold]       Refresh
  [bold]?[/bold]       This help           [bold]Esc[/bold]     Quit / Cancel
 
 Press any key to close."""
@@ -652,7 +708,8 @@ class LumosApp(App):
                 hl_indent = indent + "  "  # align under text after "· "
 
                 if item.type == ItemType.IMAGE:
-                    raw = f"{indent}· 📷 {item.media or ''}"
+                    label = item.ocr_text or item.note or ''
+                    raw = f"{indent}· 📷 {label}" if label else f"{indent}· 📷 {item.media or ''}"
                 else:
                     raw = f"{indent}· {item.text or ''}"
 
@@ -680,11 +737,27 @@ class LumosApp(App):
                         line.append(" ", style=self.sel_style)
                     lines.append(line)
 
-                # Note for images
-                if item.type == ItemType.IMAGE and item.note:
-                    note_lines = _wrap_text(hl_indent + item.note, cw, hl_indent)
-                    for nl in note_lines:
-                        lines.append(Text(" " +nl, style="dim"))
+                # Image: show inline preview via half-block characters
+                if item.type == ItemType.IMAGE:
+                    if item.media:
+                        full_path = self.data_dir / item.media
+                        if full_path.exists():
+                            img_text = _render_image_half_blocks(
+                                full_path, max_cols=50, max_rows=12,
+                            )
+                            if img_text:
+                                indent_str = f" {hl_indent}"
+                                for img_line in img_text.split("\n"):
+                                    indented = Text(indent_str)
+                                    indented.append_text(img_line)
+                                    lines.append(indented)
+                        hint = Text(f" {hl_indent}(Enter/o to open)", style="dim italic")
+                        lines.append(hint)
+                    if item.note and item.ocr_text:
+                        # Note wasn't used as label, show it
+                        note_lines = _wrap_text(hl_indent + item.note, cw, hl_indent)
+                        for nl in note_lines:
+                            lines.append(Text(" " + nl, style="dim"))
 
                 # Metadata line
                 meta_parts = []
@@ -804,6 +877,10 @@ class LumosApp(App):
             row.group.toggle_expand()
             self._build_rows()
             self._render()
+        elif isinstance(row, HighlightRow):
+            item = row.item
+            if item.type == ItemType.IMAGE and item.media:
+                self._open_media(item.media)
         elif isinstance(row, MoreRow):
             row.group.show_more()
             self._build_rows()
@@ -896,10 +973,22 @@ class LumosApp(App):
             self._load_data()
             self._render()
 
+    def _open_media(self, media_path: str):
+        """Open a media file with the system default viewer."""
+        import subprocess
+        full_path = self.data_dir / media_path
+        if full_path.exists():
+            subprocess.Popen(["open", str(full_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     def action_open_url(self):
         if not self.rows:
             return
         row = self.rows[self.cursor]
+        # Image item: open image file
+        if isinstance(row, HighlightRow) and row.item.type == ItemType.IMAGE and row.item.media:
+            self._open_media(row.item.media)
+            return
+        # Otherwise: open page URL
         url = None
         if isinstance(row, PageRow):
             url = row.group.page.url

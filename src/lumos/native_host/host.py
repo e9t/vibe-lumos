@@ -205,6 +205,55 @@ def _handle(message: dict) -> dict:
             "items": [json.loads(i.model_dump_json()) for i in items],
         }
 
+    elif action == "get_media":
+        import base64
+        import io
+
+        media_path = message.get("path", "")
+        if not media_path:
+            return _error("No media path provided")
+        full_path = config.get_data_dir() / media_path
+        if not full_path.exists():
+            return _error("Media file not found")
+
+        max_dim = message.get("max_dim", 300)  # 0 = full size
+        data = full_path.read_bytes()
+        ext = full_path.suffix.lstrip(".").lower()
+        mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                "gif": "image/gif", "webp": "image/webp"}.get(ext, "image/png")
+
+        if max_dim and max_dim > 0:
+            try:
+                from PIL import Image
+                img = Image.open(io.BytesIO(data))
+                img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+                buf = io.BytesIO()
+                if img.mode in ("RGBA", "LA", "P"):
+                    img = img.convert("RGB")
+                img.save(buf, format="JPEG", quality=75)
+                data = buf.getvalue()
+                mime = "image/jpeg"
+            except ImportError:
+                if len(data) > 700_000:
+                    return _error("Image too large and Pillow not installed")
+        else:
+            # Full size — still cap at native messaging limit (~750KB raw)
+            if len(data) > 700_000:
+                try:
+                    from PIL import Image
+                    img = Image.open(io.BytesIO(data))
+                    buf = io.BytesIO()
+                    if img.mode in ("RGBA", "LA", "P"):
+                        img = img.convert("RGB")
+                    img.save(buf, format="JPEG", quality=85)
+                    data = buf.getvalue()
+                    mime = "image/jpeg"
+                except ImportError:
+                    return _error("Image too large")
+
+        encoded = base64.b64encode(data).decode("ascii")
+        return {"ok": True, "data": encoded, "mime": mime}
+
     elif action == "delete_item":
         ok = delete_item(items_path, message["id"])
         return {"ok": ok}

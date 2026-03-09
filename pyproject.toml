@@ -14,6 +14,7 @@ dependencies = [
     "textual>=0.50",
     "openai>=1.0",
     "python-dotenv>=1.0",
+    "Pillow>=10.0",
 ]
 
 [project.optional-dependencies]

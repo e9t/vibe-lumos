@@ -7,13 +7,25 @@
 </head>
 <body>
   <div class="header">
-    <span class="logo">💡 Lumos</span>
-    <div class="header-actions">
-      <button id="btn-pri-up" class="header-btn hidden" title="Priority up">👍</button>
-      <button id="btn-pri-down" class="header-btn hidden" title="Priority down">👎</button>
-      <button id="btn-save-page" class="header-btn" title="Save current page">📄 Save Page</button>
-      <button id="btn-view-cache" class="header-btn hidden" title="View cached page">📋 Cache</button>
-      <button id="btn-delete-page" class="header-btn hidden" title="Delete page and all items">🗑</button>
+    <div class="header-row">
+      <span class="logo">💡 Lumos</span>
+      <div class="header-actions">
+        <label class="cache-toggle" title="Also cache page content">
+          <input type="checkbox" id="chk-cache" />
+          <span class="cache-toggle-label">📋</span>
+        </label>
+        <button id="btn-save-page" class="header-btn primary" title="Save current page (+ cache if checked)">📄 Save</button>
+      </div>
+    </div>
+    <div id="page-actions" class="header-row page-actions hidden">
+      <div class="header-actions">
+        <button id="btn-pri-up" class="header-btn" title="Priority up">👍</button>
+        <button id="btn-pri-down" class="header-btn" title="Priority down">👎</button>
+      </div>
+      <div class="header-actions">
+        <button id="btn-view-cache" class="header-btn" title="View cached page">📋 Cache</button>
+        <button id="btn-delete-page" class="header-btn danger" title="Delete page and all items">🗑 Delete</button>
+      </div>
     </div>
   </div>
 
