@@ -146,6 +146,7 @@ def main(
             hl_style=_hl_style(config.theme.highlight_color),
             sel_style=f"reverse {_rich_color(config.theme.selection_color)}",
             expanded_terms=expanded,
+            llm_config=config.models.llm if match == "smart" else None,
         )
 
 

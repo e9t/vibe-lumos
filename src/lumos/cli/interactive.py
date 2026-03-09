@@ -374,11 +374,13 @@ class LumosApp(App):
     }
     #search-bar {
         dock: top;
-        height: 1;
         display: none;
     }
     #search-bar.visible {
         display: block;
+    }
+    #search-bar:focus {
+        border: heavy $accent;
     }
     #confirm-msg {
         text-align: center;
@@ -412,6 +414,16 @@ class LumosApp(App):
         Binding("escape", "quit_or_cancel", "Quit", show=False),
     ]
 
+    # Allow only quit_or_cancel and search_mode while search bar is open.
+    # All other actions are blocked so key events reach the Input widget.
+    _SEARCH_ALLOWED_ACTIONS = {"quit_or_cancel", "search_mode"}
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Block bindings (except quit/search) when search bar is active."""
+        if self.search_active and action not in self._SEARCH_ALLOWED_ACTIONS:
+            return False
+        return True
+
     # Korean IME: j→ㅓ, k→ㅏ, e→ㄷ, x→ㅌ, n→ㅜ, h→ㅗ, l→ㅣ, q→ㅂ
     # Korean IME: j→ㅓ, k→ㅏ, e→ㄷ, x→ㅌ, n→ㅜ, h→ㅗ, l→ㅣ, q→ㅂ, o→ㅐ
     _KO_KEY_MAP = {
@@ -443,6 +455,7 @@ class LumosApp(App):
         hl_style: str = "bold on yellow",
         sel_style: str = "reverse yellow",
         expanded_terms: list[str] | None = None,
+        llm_config: object | None = None,
     ):
         super().__init__()
         self.items_path = items_path
@@ -459,6 +472,7 @@ class LumosApp(App):
         self.hl_style = hl_style
         self.sel_style = sel_style
         self.expanded_terms = expanded_terms
+        self.llm_config = llm_config
         # Build highlight query: include expanded terms so they get highlighted
         if expanded_terms:
             self._hl_query = " ".join(
@@ -1029,6 +1043,15 @@ class LumosApp(App):
         search_bar.focus()
         self.search_active = True
 
+    def _update_hl_query(self):
+        """Rebuild _hl_query from expanded_terms or query."""
+        if self.expanded_terms:
+            self._hl_query = " ".join(
+                f'"{t}"' if " " in t else t for t in self.expanded_terms
+            )
+        else:
+            self._hl_query = self.query
+
     @on(Input.Submitted, "#search-bar")
     def on_search_submit(self, event: Input.Submitted):
         self.query = event.value
@@ -1037,6 +1060,16 @@ class LumosApp(App):
         search_bar = self.query_one("#search-bar", Input)
         search_bar.remove_class("visible")
         self.search_active = False
+
+        # LLM query expansion (same as CLI --match=smart)
+        if self.query and self.llm_config:
+            from lumos.core.llm import expand_query
+            expanded, _err = expand_query(self.query, self.llm_config)
+            self.expanded_terms = expanded
+        else:
+            self.expanded_terms = None
+
+        self._update_hl_query()
         self._load_data()
         self._render()
 
@@ -1079,6 +1112,7 @@ def run_tui(
     hl_style: str = "bold on yellow",
     sel_style: str = "reverse yellow",
     expanded_terms: list[str] | None = None,
+    llm_config: object | None = None,
 ):
     app = LumosApp(
         items_path=items_path,
@@ -1095,5 +1129,6 @@ def run_tui(
         hl_style=hl_style,
         sel_style=sel_style,
         expanded_terms=expanded_terms,
+        llm_config=llm_config,
     )
     app.run()
