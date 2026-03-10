@@ -360,6 +360,7 @@ Press any key to close."""
 # ── Main TUI App ───────────────────────────────────────────────────────────
 
 class LumosApp(App):
+    ENABLE_COMMAND_PALETTE = False
     CSS = """
     Screen {
         background: $surface;

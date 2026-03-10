@@ -33,7 +33,10 @@ async function updatePagePriority(delta) {
   if (!_pageItem) return;
   const resp = await chrome.runtime.sendMessage({ type: 'UPDATE_PRIORITY', id: _pageItem.id, delta });
   if (resp?.ok) {
+    showStatus(`Priority ${delta > 0 ? '+' : ''}${delta} → ${resp.priority}`);
     await refreshItems();
+  } else {
+    showStatus(resp?.error || 'Priority update failed', 'error');
   }
 }
 

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import sys
 
 import typer
+from rich import print as rprint
 
 from lumos.core.config import load_config
 from lumos.core.store import get_by_url, update_item
@@ -35,18 +37,22 @@ def main():
             try:
                 entries.append(json.loads(line))
             except json.JSONDecodeError:
+                rprint(f"[yellow]⚠ Skipping malformed line: {line[:80]}[/yellow]", file=sys.stderr)
                 continue
 
     if not entries:
         return
 
     applied = 0
+    skipped = 0
     for entry in entries:
         url = entry.get("url", "")
         delta = entry.get("delta", 0)
         item_id = entry.get("id", "")
 
         if not delta:
+            rprint(f"[yellow]⚠ Skipping entry with no delta: {entry}[/yellow]", file=sys.stderr)
+            skipped += 1
             continue
 
         if item_id:
@@ -56,8 +62,15 @@ def main():
             )
             if updated:
                 applied += 1
+            else:
+                rprint(f"[yellow]⚠ Item not found by id: {item_id}[/yellow]", file=sys.stderr)
+                skipped += 1
         elif url:
             matches = get_by_url(items_path, url)
+            if not matches:
+                rprint(f"[yellow]⚠ No items found for url: {url}[/yellow]", file=sys.stderr)
+                skipped += 1
+                continue
             for m in matches:
                 updated = update_item(
                     items_path, m.id,
@@ -65,9 +78,17 @@ def main():
                 )
                 if updated:
                     applied += 1
+        else:
+            rprint(f"[yellow]⚠ Entry has no id or url: {entry}[/yellow]", file=sys.stderr)
+            skipped += 1
 
-    # Clear the file after processing
-    updates_path.write_text("", encoding="utf-8")
+    # Only clear after successful processing
+    if applied > 0:
+        updates_path.write_text("", encoding="utf-8")
+        rprint(f"[green]✓ Applied {applied} priority updates[/green]")
+    else:
+        rprint(f"[red]✗ No updates applied ({skipped} skipped). File preserved for debugging.[/red]", file=sys.stderr)
+        rprint(f"[dim]  File: {updates_path}[/dim]", file=sys.stderr)
 
-    from rich import print as rprint
-    rprint(f"[green]✓ Applied {applied} priority updates[/green]")
+    if skipped > 0 and applied > 0:
+        rprint(f"[yellow]  ({skipped} entries skipped)[/yellow]", file=sys.stderr)
