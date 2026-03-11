@@ -417,8 +417,13 @@ function showToolbar(rect) {
   btnNote.onpointerdown = (e) => { e.preventDefault(); e.stopPropagation(); };
   btnNote.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
 
+  const btnTest = document.createElement('button');
+  btnTest.textContent = '🔍 TEST';
+  btnTest.onclick = function() { alert('Lumos toolbar works! URL: ' + location.href); };
+
   toolbar.appendChild(btnHighlight);
   toolbar.appendChild(btnNote);
+  toolbar.appendChild(btnTest);
   positionElement(toolbar, rect);
 }
 
