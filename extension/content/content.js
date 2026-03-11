@@ -481,7 +481,7 @@ async function saveHighlight(note) {
   try {
     const response = await chrome.runtime.sendMessage({
       type: 'SAVE_HIGHLIGHT',
-      url: getCanonicalUrl(),
+      url: location.href.split('#')[0],
       title: document.title,
       text,
       note,
