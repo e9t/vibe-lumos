@@ -538,14 +538,27 @@ document.addEventListener('keydown', (e) => {
 
 async function restoreHighlights(retries = 3) {
   try {
-    const url = getCanonicalUrl();
-    const response = await chrome.runtime.sendMessage({ type: 'GET_PAGE_ITEMS', url });
-    if (!response?.ok) {
-      if (retries > 0) setTimeout(() => restoreHighlights(retries - 1), 500);
-      return;
+    const canonicalUrl = getCanonicalUrl();
+    const browserUrl = location.href.split('#')[0];
+
+    // Try canonical URL first, then browser URL as fallback
+    const urlsToTry = [canonicalUrl];
+    if (browserUrl !== canonicalUrl) urlsToTry.push(browserUrl);
+
+    let items = [];
+    for (const url of urlsToTry) {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_PAGE_ITEMS', url });
+      if (response?.ok && response.items.length) {
+        items = response.items;
+        break;
+      }
+      if (!response?.ok) {
+        if (retries > 0) setTimeout(() => restoreHighlights(retries - 1), 500);
+        return;
+      }
     }
 
-    for (const item of response.items) {
+    for (const item of items) {
       if (item.type === 'highlight' && item.text) {
         tryRestoreHighlight(item);
       }

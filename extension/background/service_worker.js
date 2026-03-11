@@ -59,15 +59,19 @@ function normalizeUrl(url) {
 
 // ─── Icon / Badge ─────────────────────────────────────────────────────────────
 
-async function updateBadge(tabId, url) {
+async function updateBadge(tabId, urls) {
+  // urls can be a string or array — try each until one matches
+  const urlList = Array.isArray(urls) ? urls : [urls];
   try {
-    const response = await sendToHost({ action: 'check_url', url });
-    if (response.ok && response.exists) {
-      await chrome.action.setBadgeText({ text: '✓', tabId });
-      await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId });
-    } else {
-      await chrome.action.setBadgeText({ text: '', tabId });
+    for (const url of urlList) {
+      const response = await sendToHost({ action: 'check_url', url });
+      if (response.ok && response.exists) {
+        await chrome.action.setBadgeText({ text: '✓', tabId });
+        await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId });
+        return;
+      }
     }
+    await chrome.action.setBadgeText({ text: '', tabId });
   } catch (e) {
     console.error('Lumos: updateBadge error', e);
     await chrome.action.setBadgeText({ text: '', tabId });
@@ -91,19 +95,23 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-/** Ask the content script for the canonical URL; fall back to tab.url */
-async function getCanonicalUrlFromTab(tabId, fallbackUrl) {
+/** Build list of URLs to try: canonical (from content script) + browser URL */
+async function getUrlsToTry(tabId, tabUrl) {
+  const browserUrl = normalizeUrl(tabUrl);
   try {
     const resp = await chrome.tabs.sendMessage(tabId, { type: 'GET_CANONICAL_URL' });
-    return resp?.url || fallbackUrl;
-  } catch (_) {
-    return fallbackUrl;
-  }
+    if (resp?.url) {
+      const canonical = normalizeUrl(resp.url);
+      if (canonical !== browserUrl) return [canonical, browserUrl];
+      return [canonical];
+    }
+  } catch (_) {}
+  return [browserUrl];
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
-    getCanonicalUrlFromTab(tabId, tab.url).then((url) => updateBadge(tabId, normalizeUrl(url)));
+    getUrlsToTry(tabId, tab.url).then((urls) => updateBadge(tabId, urls));
   }
 });
 
@@ -111,8 +119,8 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await chrome.tabs.get(tabId);
     if (tab.url && !tab.url.startsWith('chrome://')) {
-      const url = await getCanonicalUrlFromTab(tabId, tab.url);
-      updateBadge(tabId, normalizeUrl(url));
+      const urls = await getUrlsToTry(tabId, tab.url);
+      updateBadge(tabId, urls);
     }
   } catch (_) {}
 });

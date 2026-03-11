@@ -206,20 +206,28 @@ async function init() {
   }
   _currentTab = tab;
 
-  // Ask the content script for the canonical URL (matches what highlights are saved under)
-  let pageUrl = tab.url;
+  // Try canonical URL first (from content script), then tab.url as fallback
+  let canonicalUrl = null;
   try {
     const canonical = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CANONICAL_URL' });
-    if (canonical?.url) pageUrl = canonical.url;
+    if (canonical?.url) canonicalUrl = canonical.url;
   } catch (_) {}
 
-  // Load items for this page
+  const urlsToTry = [];
+  if (canonicalUrl) urlsToTry.push(canonicalUrl);
+  if (!canonicalUrl || canonicalUrl !== tab.url) urlsToTry.push(tab.url);
+
+  // Load items for this page — try each URL until we find items
   try {
-    const response = await chrome.runtime.sendMessage({
-      type: 'GET_PAGE_ITEMS',
-      url: pageUrl,
-    });
-    renderItems(response?.ok ? response.items : []);
+    let items = [];
+    for (const url of urlsToTry) {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_PAGE_ITEMS', url });
+      if (response?.ok && response.items.length) {
+        items = response.items;
+        break;
+      }
+    }
+    renderItems(items);
   } catch (e) {
     document.getElementById('loading').textContent = 'Could not connect to Lumos.';
     document.getElementById('loading').classList.remove('hidden');
