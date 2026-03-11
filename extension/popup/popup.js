@@ -212,17 +212,7 @@ async function init() {
       type: 'GET_PAGE_ITEMS',
       url: tab.url,
     });
-    if (response?.ok) {
-      renderItems(response.items);
-    } else {
-      renderItems([]);
-      const err = response?.error || '';
-      if (err.includes('native messaging host') || err.includes('not found') || err.includes('Specified native')) {
-        showStatus('Native host not found. Run: lumos-init --extension-id <ID>', 'error');
-      } else if (err) {
-        showStatus(err, 'error');
-      }
-    }
+    renderItems(response?.ok ? response.items : []);
   } catch (e) {
     document.getElementById('loading').textContent = 'Could not connect to Lumos.';
     document.getElementById('loading').classList.remove('hidden');
