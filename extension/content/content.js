@@ -385,26 +385,28 @@ function positionElement(el, anchorRect) {
 }
 
 function showToolbar(rect) {
+  console.log('[Lumos] showToolbar called at', location.href);
   removeToolbar();
   removeNotePopup();
   toolbarShownAt = Date.now();
 
   toolbar = document.createElement('div');
   toolbar.className = 'lumos-toolbar';
+  toolbar.setAttribute('data-lumos', 'toolbar');
 
   const btnHighlight = document.createElement('button');
   btnHighlight.textContent = '💡 LUMOS Highlight';
-  btnHighlight.onclick = () => {
-    console.log('[Lumos] Highlight button CLICKED');
+  btnHighlight.onclick = function() {
+    console.log('[Lumos] Highlight button CLICKED at', location.href);
     saveHighlight(null);
   };
-  btnHighlight.onpointerdown = (e) => {
-    console.log('[Lumos] Highlight button pointerdown');
+  btnHighlight.onpointerdown = function(e) {
+    console.log('[Lumos] Highlight button pointerdown at', location.href);
     e.preventDefault();
     e.stopPropagation();
   };
-  btnHighlight.onmousedown = (e) => {
-    console.log('[Lumos] Highlight button mousedown');
+  btnHighlight.onmousedown = function(e) {
+    console.log('[Lumos] Highlight button mousedown at', location.href);
     e.preventDefault();
     e.stopPropagation();
   };
