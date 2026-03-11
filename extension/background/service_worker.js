@@ -310,6 +310,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SAVE_HIGHLIGHT') {
     (async () => {
       try {
+        console.log('[Lumos] SAVE_HIGHLIGHT received — tabUrl:', tabUrl, '| message.url:', message.url, '| sender.tab:', JSON.stringify(sender.tab));
         const pageUrl = normalizeUrl(tabUrl || message.url);
         // Ensure the page is saved first
         const check = await sendToHost({ action: 'check_url', url: pageUrl });
