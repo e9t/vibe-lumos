@@ -189,32 +189,32 @@ function showHighlightMenu(mark) {
   const btnUp = document.createElement('button');
   btnUp.textContent = '👍';
   btnUp.title = 'Priority up';
-  btnUp.addEventListener('mousedown', (e) => {
-    e.preventDefault();
+  btnUp.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
     updatePriority(mark, 1);
-  });
+  }, true);
 
   const btnDown = document.createElement('button');
   btnDown.textContent = '👎';
   btnDown.title = 'Priority down';
-  btnDown.addEventListener('mousedown', (e) => {
-    e.preventDefault();
+  btnDown.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
     updatePriority(mark, -1);
-  });
+  }, true);
 
   const btnNote = document.createElement('button');
   btnNote.textContent = mark.dataset.lumosNote ? '📝 Edit Note' : '📝 Add Note';
-  btnNote.addEventListener('mousedown', (e) => {
-    e.preventDefault();
+  btnNote.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
     showEditNoteInput(mark);
-  });
+  }, true);
 
   const btnRemove = document.createElement('button');
   btnRemove.textContent = '🗑 Remove';
-  btnRemove.addEventListener('mousedown', (e) => {
-    e.preventDefault();
+  btnRemove.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
     deleteHighlight(mark);
-  });
+  }, true);
 
   toolbar.appendChild(btnUp);
   toolbar.appendChild(btnDown);
@@ -394,18 +394,22 @@ function showToolbar(rect) {
 
   const btnHighlight = document.createElement('button');
   btnHighlight.textContent = '💡 Highlight';
-  btnHighlight.addEventListener('mousedown', (e) => {
-    console.log('[Lumos] Highlight button mousedown fired');
+  btnHighlight.addEventListener('pointerdown', (e) => {
+    console.log('[Lumos] Highlight button pointerdown fired');
     e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
     saveHighlight(null);
-  });
+  }, true);
 
   const btnNote = document.createElement('button');
   btnNote.textContent = '📝 Note';
-  btnNote.addEventListener('mousedown', (e) => {
+  btnNote.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
     showNoteInput(rect);
-  });
+  }, true);
 
   toolbar.appendChild(btnHighlight);
   toolbar.appendChild(btnNote);
