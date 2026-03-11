@@ -206,11 +206,18 @@ async function init() {
   }
   _currentTab = tab;
 
+  // Ask the content script for the canonical URL (matches what highlights are saved under)
+  let pageUrl = tab.url;
+  try {
+    const canonical = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CANONICAL_URL' });
+    if (canonical?.url) pageUrl = canonical.url;
+  } catch (_) {}
+
   // Load items for this page
   try {
     const response = await chrome.runtime.sendMessage({
       type: 'GET_PAGE_ITEMS',
-      url: tab.url,
+      url: pageUrl,
     });
     renderItems(response?.ok ? response.items : []);
   } catch (e) {
@@ -229,7 +236,7 @@ async function init() {
       const response = await chrome.runtime.sendMessage({
         type: 'SAVE_PAGE_NOW',
         tabId: tab.id,
-        url: tab.url,
+        url: pageUrl,
         title: tab.title || '',
       });
 

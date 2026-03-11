@@ -91,9 +91,19 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+/** Ask the content script for the canonical URL; fall back to tab.url */
+async function getCanonicalUrlFromTab(tabId, fallbackUrl) {
+  try {
+    const resp = await chrome.tabs.sendMessage(tabId, { type: 'GET_CANONICAL_URL' });
+    return resp?.url || fallbackUrl;
+  } catch (_) {
+    return fallbackUrl;
+  }
+}
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
-    updateBadge(tabId, normalizeUrl(tab.url));
+    getCanonicalUrlFromTab(tabId, tab.url).then((url) => updateBadge(tabId, normalizeUrl(url)));
   }
 });
 
@@ -101,7 +111,8 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await chrome.tabs.get(tabId);
     if (tab.url && !tab.url.startsWith('chrome://')) {
-      updateBadge(tabId, normalizeUrl(tab.url));
+      const url = await getCanonicalUrlFromTab(tabId, tab.url);
+      updateBadge(tabId, normalizeUrl(url));
     }
   } catch (_) {}
 });

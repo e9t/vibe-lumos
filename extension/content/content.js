@@ -645,7 +645,11 @@ function findTextInBody(searchText) {
 
 // ─── Messages from Service Worker ────────────────────────────────────────────
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === 'GET_CANONICAL_URL') {
+    sendResponse({ url: getCanonicalUrl() });
+    return;
+  }
   if (message.type === 'PAGE_SAVED') showToast('Page saved to Lumos ✓');
   if (message.type === 'IMAGE_SAVED') showToast('Image saved to Lumos ✓');
   if (message.type === 'SCROLL_TO_HIGHLIGHT') {
