@@ -393,23 +393,27 @@ function showToolbar(rect) {
   toolbar.className = 'lumos-toolbar';
 
   const btnHighlight = document.createElement('button');
-  btnHighlight.textContent = '💡 Highlight';
-  btnHighlight.addEventListener('pointerdown', (e) => {
-    console.log('[Lumos] Highlight button pointerdown fired');
+  btnHighlight.textContent = '💡 LUMOS Highlight';
+  btnHighlight.onclick = () => {
+    console.log('[Lumos] Highlight button CLICKED');
+    saveHighlight(null);
+  };
+  btnHighlight.onpointerdown = (e) => {
+    console.log('[Lumos] Highlight button pointerdown');
     e.preventDefault();
     e.stopPropagation();
-    e.stopImmediatePropagation();
-    saveHighlight(null);
-  }, true);
+  };
+  btnHighlight.onmousedown = (e) => {
+    console.log('[Lumos] Highlight button mousedown');
+    e.preventDefault();
+    e.stopPropagation();
+  };
 
   const btnNote = document.createElement('button');
-  btnNote.textContent = '📝 Note';
-  btnNote.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    showNoteInput(rect);
-  }, true);
+  btnNote.textContent = '📝 LUMOS Note';
+  btnNote.onclick = () => showNoteInput(rect);
+  btnNote.onpointerdown = (e) => { e.preventDefault(); e.stopPropagation(); };
+  btnNote.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
 
   toolbar.appendChild(btnHighlight);
   toolbar.appendChild(btnNote);
