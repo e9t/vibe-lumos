@@ -310,8 +310,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SAVE_HIGHLIGHT') {
     (async () => {
       try {
-        const pageUrl = normalizeUrl(tabUrl || message.url);
-        console.log('[Lumos] SAVE_HIGHLIGHT — pageUrl:', pageUrl, '| tabUrl:', tabUrl, '| message.url:', message.url);
+        // Always prefer the tab URL (requires "tabs" permission) over content script URL
+        const rawUrl = tabUrl || message.url;
+        const pageUrl = normalizeUrl(rawUrl);
+        console.log('[Lumos] SAVE_HIGHLIGHT — pageUrl:', pageUrl, '| tabUrl:', tabUrl, '| message.url:', message.url, '| rawUrl:', rawUrl);
         // Ensure the page is saved first
         const check = await sendToHost({ action: 'check_url', url: pageUrl });
         if (!check.ok || !check.ids.length) {

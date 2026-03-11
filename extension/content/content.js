@@ -504,6 +504,7 @@ async function saveHighlight(note) {
         m.dataset.lumosId = realId;
         if (note) m.dataset.lumosNote = note;
       });
+      console.log('[Lumos] highlight saved — sent url:', location.href.split('#')[0], '| stored url:', response.item.url);
       showToast('Saved to Lumos ✓');
     } else {
       marks.forEach(removeMark);
