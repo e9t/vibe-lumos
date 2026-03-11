@@ -742,4 +742,6 @@ if (document.readyState === 'loading') {
   restoreHighlights();
 }
 
+console.log('[Lumos] content script FULLY initialized — event listeners registered at', location.href);
+
 })(); // end top-frame-only IIFE
