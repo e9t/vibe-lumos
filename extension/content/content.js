@@ -1,5 +1,12 @@
 'use strict';
 
+// Only run in the top frame — never in iframes (e.g. Medium embeds LinkedIn articles)
+{
+  let isTop = false;
+  try { isTop = window.self === window.top; } catch (_) {}
+  if (!isTop) throw new Error('Lumos: skipping iframe');
+}
+
 console.log('[Lumos] content script loaded at', location.href);
 
 // ─── URL Normalization ────────────────────────────────────────────────────────
