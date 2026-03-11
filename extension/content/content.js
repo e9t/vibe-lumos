@@ -1,11 +1,10 @@
 'use strict';
 
-// Only run in the top frame — never in iframes (e.g. Medium embeds LinkedIn articles)
-{
-  let isTop = false;
-  try { isTop = window.self === window.top; } catch (_) {}
-  if (!isTop) throw new Error('Lumos: skipping iframe');
-}
+// Only run in the top frame — never in iframes
+(function() {
+let isTop = false;
+try { isTop = window.self === window.top; } catch (_) {}
+if (!isTop) return;
 
 console.log('[Lumos] content script loaded at', location.href);
 
@@ -395,13 +394,15 @@ function showToolbar(rect) {
 
   const btnHighlight = document.createElement('button');
   btnHighlight.textContent = '💡 Highlight';
-  btnHighlight.addEventListener('click', () => {
+  btnHighlight.addEventListener('mousedown', (e) => {
+    e.preventDefault();
     saveHighlight(null);
   });
 
   const btnNote = document.createElement('button');
   btnNote.textContent = '📝 Note';
-  btnNote.addEventListener('click', () => {
+  btnNote.addEventListener('mousedown', (e) => {
+    e.preventDefault();
     showNoteInput(rect);
   });
 
@@ -703,3 +704,5 @@ if (document.readyState === 'loading') {
 } else {
   restoreHighlights();
 }
+
+})(); // end top-frame-only IIFE
