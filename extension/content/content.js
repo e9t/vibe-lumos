@@ -531,7 +531,23 @@ async function saveHighlight(note) {
   }
 }
 
-// ─── Mouse Events ─────────────────────────────────────────────────────────────
+// ─── Mouse / Selection Events ─────────────────────────────────────────────────
+
+// Use selectionchange to detect text selection — works even when sites intercept mouseup
+let _selectionDebounce = null;
+document.addEventListener('selectionchange', () => {
+  clearTimeout(_selectionDebounce);
+  _selectionDebounce = setTimeout(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) return;
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return;
+    pendingRange = range.cloneRange();
+    console.log('[Lumos] selectionchange — showing toolbar at', location.href);
+    showToolbar(rect);
+  }, 300);
+});
 
 document.addEventListener('mouseup', (e) => {
   if (e.target.closest('.lumos-toolbar, .lumos-note-input')) return;
