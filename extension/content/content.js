@@ -339,6 +339,7 @@ function computeLocation(range) {
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 function showToast(text) {
+  console.log('[Lumos] showToast:', text);
   const el = document.createElement('div');
   el.className = 'lumos-toast';
   el.textContent = text;
@@ -389,6 +390,7 @@ function showToolbar(rect) {
   const btnHighlight = document.createElement('button');
   btnHighlight.textContent = '💡 Highlight';
   btnHighlight.addEventListener('mousedown', (e) => {
+    console.log('[Lumos] highlight button mousedown fired');
     e.preventDefault(); // prevent selection from clearing
     saveHighlight(null);
   });
