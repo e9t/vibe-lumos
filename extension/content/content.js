@@ -4,12 +4,26 @@ console.log('[Lumos] content script loaded at', location.href);
 
 // ─── URL Normalization ────────────────────────────────────────────────────────
 
-/** Returns canonical URL with fragment stripped. */
+/** Extract root domain (last two segments), e.g. "sub.medium.com" → "medium.com" */
+function rootDomain(hostname) {
+  const parts = hostname.split('.');
+  return parts.slice(-2).join('.');
+}
+
+/** Returns canonical URL with fragment stripped. Only trusts canonical/og:url if same root domain. */
 function getCanonicalUrl() {
-  const raw =
-    document.querySelector('link[rel="canonical"]')?.href ||
-    document.querySelector('meta[property="og:url"]')?.content ||
-    location.href;
+  const currentRoot = rootDomain(location.hostname);
+  const canonical = document.querySelector('link[rel="canonical"]')?.href;
+  const ogUrl = document.querySelector('meta[property="og:url"]')?.content;
+
+  let raw = location.href;
+  for (const candidate of [canonical, ogUrl]) {
+    if (!candidate) continue;
+    try {
+      if (rootDomain(new URL(candidate).hostname) === currentRoot) { raw = candidate; break; }
+    } catch (_) {}
+  }
+
   let u = raw.split('#')[0];
   try {
     const parsed = new URL(u);
