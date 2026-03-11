@@ -339,7 +339,6 @@ function computeLocation(range) {
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 function showToast(text) {
-  console.log('[Lumos] showToast:', text);
   const el = document.createElement('div');
   el.className = 'lumos-toast';
   el.textContent = text;
@@ -389,16 +388,13 @@ function showToolbar(rect) {
 
   const btnHighlight = document.createElement('button');
   btnHighlight.textContent = '💡 Highlight';
-  btnHighlight.addEventListener('mousedown', (e) => {
-    console.log('[Lumos] highlight button mousedown fired');
-    e.preventDefault(); // prevent selection from clearing
+  btnHighlight.addEventListener('click', () => {
     saveHighlight(null);
   });
 
   const btnNote = document.createElement('button');
   btnNote.textContent = '📝 Note';
-  btnNote.addEventListener('mousedown', (e) => {
-    e.preventDefault();
+  btnNote.addEventListener('click', () => {
     showNoteInput(rect);
   });
 
@@ -443,10 +439,8 @@ function showNoteInput(anchorRect) {
 // ─── Save Highlight ───────────────────────────────────────────────────────────
 
 async function saveHighlight(note) {
-  console.log('[Lumos] saveHighlight called, pendingRange:', !!pendingRange, pendingRange?.collapsed, pendingRange?.toString().slice(0, 50));
   const range = pendingRange;
   if (!range || range.collapsed) {
-    console.log('[Lumos] saveHighlight: no valid range, aborting');
     removeToolbar();
     removeNotePopup();
     return;
@@ -454,7 +448,6 @@ async function saveHighlight(note) {
 
   const text = range.toString().trim();
   if (!text) {
-    console.log('[Lumos] saveHighlight: empty text, aborting');
     removeToolbar();
     removeNotePopup();
     return;
@@ -483,13 +476,10 @@ async function saveHighlight(note) {
   const tempId = `temp_${Date.now()}`;
   const marks = applyMark(textNodes, tempId);
 
-  const saveUrl = location.href.split('#')[0];
-  console.log('[Lumos] saveHighlight URL:', saveUrl, '| location.href:', location.href);
-
   try {
     const response = await chrome.runtime.sendMessage({
       type: 'SAVE_HIGHLIGHT',
-      url: saveUrl,
+      url: location.href.split('#')[0],
       title: document.title,
       text,
       note,
