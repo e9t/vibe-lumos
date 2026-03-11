@@ -18,42 +18,88 @@ app = typer.Typer(
     add_completion=False,
 )
 
-# Known Chromium browser native messaging host directories.
-# Each entry: (label, {platform: path_template})
-_BROWSERS: dict[str, dict[str, str]] = {
-    "chrome": {
-        "Darwin": "~/Library/Application Support/Google/Chrome/NativeMessagingHosts",
-        "Linux": "~/.config/google-chrome/NativeMessagingHosts",
-    },
-    "chromium": {
-        "Darwin": "~/Library/Application Support/Chromium/NativeMessagingHosts",
-        "Linux": "~/.config/chromium/NativeMessagingHosts",
-    },
+# Known Chromium browser native messaging host directories by platform.
+_BROWSER_DIRS: dict[str, list[tuple[str, str]]] = {
+    "Darwin": [
+        ("chrome", "~/Library/Application Support/Google/Chrome/NativeMessagingHosts"),
+        ("chrome-beta", "~/Library/Application Support/Google/Chrome Beta/NativeMessagingHosts"),
+        ("chromium", "~/Library/Application Support/Chromium/NativeMessagingHosts"),
+        ("brave", "~/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"),
+        ("edge", "~/Library/Application Support/Microsoft Edge/NativeMessagingHosts"),
+        ("arc", "~/Library/Application Support/Arc/User Data/NativeMessagingHosts"),
+    ],
+    "Linux": [
+        ("chrome", "~/.config/google-chrome/NativeMessagingHosts"),
+        ("chrome-beta", "~/.config/google-chrome-beta/NativeMessagingHosts"),
+        ("chromium", "~/.config/chromium/NativeMessagingHosts"),
+        ("brave", "~/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts"),
+        ("edge", "~/.config/microsoft-edge/NativeMessagingHosts"),
+    ],
 }
+
+
+def _detect_browsers() -> list[tuple[str, Path]]:
+    """Find Chromium browser config dirs that exist on this system."""
+    system = platform.system()
+    candidates = _BROWSER_DIRS.get(system, [])
+    found: list[tuple[str, Path]] = []
+    for label, template in candidates:
+        path = Path(template).expanduser()
+        # Check if the browser profile dir exists (parent of NativeMessagingHosts)
+        if path.parent.exists():
+            found.append((label, path))
+
+    # Also scan for unknown Chromium-based browsers with NativeMessagingHosts dirs
+    if system == "Darwin":
+        app_support = Path("~/Library/Application Support").expanduser()
+        if app_support.exists():
+            known_parents = {p.parent for _, p in found}
+            for d in app_support.iterdir():
+                nmh = d / "NativeMessagingHosts"
+                if nmh.exists() and d not in known_parents:
+                    # Check if there's already a chromium-style manifest here
+                    found.append((d.name, nmh))
+    elif system == "Linux":
+        config = Path("~/.config").expanduser()
+        if config.exists():
+            known_parents = {p.parent for _, p in found}
+            for d in config.iterdir():
+                nmh = d / "NativeMessagingHosts"
+                if nmh.exists() and d not in known_parents:
+                    found.append((d.name, nmh))
+
+    return found
 
 
 def _get_host_dirs(browsers: list[str] | None, host_dir: str | None) -> list[tuple[str, Path]]:
     """Return list of (label, path) for native messaging host directories to register."""
     system = platform.system()
-    results: list[tuple[str, Path]] = []
 
     if host_dir:
-        results.append(("custom", Path(host_dir).expanduser()))
+        return [("custom", Path(host_dir).expanduser())]
+
+    if browsers:
+        results: list[tuple[str, Path]] = []
+        all_dirs = dict(_BROWSER_DIRS.get(system, []))
+        for name in browsers:
+            if name in all_dirs:
+                results.append((name, Path(all_dirs[name]).expanduser()))
+            else:
+                # Treat as direct path
+                results.append((name, Path(name).expanduser()))
         return results
 
-    targets = browsers or ["chrome"]
-    for name in targets:
-        if name in _BROWSERS:
-            template = _BROWSERS[name].get(system)
-            if template:
-                results.append((name, Path(template).expanduser()))
-            else:
-                rprint(f"[yellow]⚠[/yellow]  {name}: no known path for {system}")
-        else:
-            # Treat unknown browser name as a direct path
-            results.append((name, Path(name).expanduser()))
+    # Default: auto-detect all installed browsers
+    detected = _detect_browsers()
+    if detected:
+        return detected
 
-    return results
+    # Fallback: at least register for Chrome
+    chrome_dirs = dict(_BROWSER_DIRS.get(system, []))
+    if "chrome" in chrome_dirs:
+        return [("chrome", Path(chrome_dirs["chrome"]).expanduser())]
+
+    return []
 
 
 @app.command()
@@ -90,6 +136,8 @@ def init(
             rprint(f"[green]✅[/green] Native host registered ({label}): {dir_path}")
         if not extension_id:
             rprint("[yellow]⚠[/yellow]  Run again with --extension-id <ID> after loading the extension")
+    else:
+        rprint("[yellow]⚠[/yellow]  No browsers detected. Use --host-dir to specify your browser's NativeMessagingHosts path")
 
     rprint("[green]✅[/green] Ready!")
 
