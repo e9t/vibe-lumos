@@ -6,8 +6,6 @@ let isTop = false;
 try { isTop = window.self === window.top; } catch (_) {}
 if (!isTop) return;
 
-console.log('[Lumos] content script loaded at', location.href);
-
 // ─── URL Normalization ────────────────────────────────────────────────────────
 
 /** Extract root domain (last two segments), e.g. "sub.medium.com" → "medium.com" */
@@ -385,45 +383,31 @@ function positionElement(el, anchorRect) {
 }
 
 function showToolbar(rect) {
-  console.log('[Lumos] showToolbar called at', location.href);
   removeToolbar();
   removeNotePopup();
   toolbarShownAt = Date.now();
 
   toolbar = document.createElement('div');
   toolbar.className = 'lumos-toolbar';
-  toolbar.setAttribute('data-lumos', 'toolbar');
 
   const btnHighlight = document.createElement('button');
-  btnHighlight.textContent = '💡 LUMOS Highlight';
-  btnHighlight.onclick = function() {
-    console.log('[Lumos] Highlight button CLICKED at', location.href);
-    saveHighlight(null);
-  };
+  btnHighlight.textContent = '💡 Highlight';
   btnHighlight.onpointerdown = function(e) {
-    console.log('[Lumos] Highlight button pointerdown at', location.href);
     e.preventDefault();
     e.stopPropagation();
   };
-  btnHighlight.onmousedown = function(e) {
-    console.log('[Lumos] Highlight button mousedown at', location.href);
-    e.preventDefault();
-    e.stopPropagation();
-  };
+  btnHighlight.onclick = function() { saveHighlight(null); };
 
   const btnNote = document.createElement('button');
-  btnNote.textContent = '📝 LUMOS Note';
-  btnNote.onclick = () => showNoteInput(rect);
-  btnNote.onpointerdown = (e) => { e.preventDefault(); e.stopPropagation(); };
-  btnNote.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
-
-  const btnTest = document.createElement('button');
-  btnTest.textContent = '🔍 TEST';
-  btnTest.onclick = function() { alert('Lumos toolbar works! URL: ' + location.href); };
+  btnNote.textContent = '📝 Note';
+  btnNote.onpointerdown = function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  btnNote.onclick = function() { showNoteInput(rect); };
 
   toolbar.appendChild(btnHighlight);
   toolbar.appendChild(btnNote);
-  toolbar.appendChild(btnTest);
   positionElement(toolbar, rect);
 }
 
@@ -463,10 +447,8 @@ function showNoteInput(anchorRect) {
 // ─── Save Highlight ───────────────────────────────────────────────────────────
 
 async function saveHighlight(note) {
-  console.log('[Lumos] saveHighlight called — pendingRange:', !!pendingRange);
   const range = pendingRange;
   if (!range || range.collapsed) {
-    console.log('[Lumos] saveHighlight — no range or collapsed, bailing');
     removeToolbar();
     removeNotePopup();
     return;
@@ -474,12 +456,10 @@ async function saveHighlight(note) {
 
   const text = range.toString().trim();
   if (!text) {
-    console.log('[Lumos] saveHighlight — empty text, bailing');
     removeToolbar();
     removeNotePopup();
     return;
   }
-  console.log('[Lumos] saveHighlight — text:', text.slice(0, 50), '| url:', location.href);
 
   // Capture original HTML before touching the DOM
   let originalHtml = null;
@@ -524,7 +504,6 @@ async function saveHighlight(note) {
         m.dataset.lumosId = realId;
         if (note) m.dataset.lumosNote = note;
       });
-      console.log('[Lumos] highlight saved — sent url:', location.href.split('#')[0], '| stored url:', response.item.url);
       showToast('Saved to Lumos ✓');
     } else {
       marks.forEach(removeMark);
@@ -549,7 +528,6 @@ document.addEventListener('selectionchange', () => {
     const rect = range.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return;
     pendingRange = range.cloneRange();
-    console.log('[Lumos] selectionchange — showing toolbar at', location.href);
     showToolbar(rect);
   }, 300);
 });
@@ -741,7 +719,5 @@ if (document.readyState === 'loading') {
 } else {
   restoreHighlights();
 }
-
-console.log('[Lumos] content script FULLY initialized — event listeners registered at', location.href);
 
 })(); // end top-frame-only IIFE
