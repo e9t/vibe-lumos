@@ -310,7 +310,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SAVE_HIGHLIGHT') {
     (async () => {
       try {
-        const pageUrl = normalizeUrl(message.url);
+        const pageUrl = normalizeUrl(tabUrl || message.url);
         // Ensure the page is saved first
         const check = await sendToHost({ action: 'check_url', url: pageUrl });
         if (!check.ok || !check.ids.length) {
