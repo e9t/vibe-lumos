@@ -395,6 +395,7 @@ function showToolbar(rect) {
   const btnHighlight = document.createElement('button');
   btnHighlight.textContent = '💡 Highlight';
   btnHighlight.addEventListener('mousedown', (e) => {
+    console.log('[Lumos] Highlight button mousedown fired');
     e.preventDefault();
     saveHighlight(null);
   });
@@ -447,8 +448,10 @@ function showNoteInput(anchorRect) {
 // ─── Save Highlight ───────────────────────────────────────────────────────────
 
 async function saveHighlight(note) {
+  console.log('[Lumos] saveHighlight called — pendingRange:', !!pendingRange);
   const range = pendingRange;
   if (!range || range.collapsed) {
+    console.log('[Lumos] saveHighlight — no range or collapsed, bailing');
     removeToolbar();
     removeNotePopup();
     return;
@@ -456,10 +459,12 @@ async function saveHighlight(note) {
 
   const text = range.toString().trim();
   if (!text) {
+    console.log('[Lumos] saveHighlight — empty text, bailing');
     removeToolbar();
     removeNotePopup();
     return;
   }
+  console.log('[Lumos] saveHighlight — text:', text.slice(0, 50), '| url:', location.href);
 
   // Capture original HTML before touching the DOM
   let originalHtml = null;
