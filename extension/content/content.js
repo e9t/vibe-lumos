@@ -478,10 +478,13 @@ async function saveHighlight(note) {
   const tempId = `temp_${Date.now()}`;
   const marks = applyMark(textNodes, tempId);
 
+  const saveUrl = location.href.split('#')[0];
+  console.log('[Lumos] saveHighlight URL:', saveUrl, '| location.href:', location.href);
+
   try {
     const response = await chrome.runtime.sendMessage({
       type: 'SAVE_HIGHLIGHT',
-      url: location.href.split('#')[0],
+      url: saveUrl,
       title: document.title,
       text,
       note,

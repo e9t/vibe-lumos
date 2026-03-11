@@ -244,7 +244,7 @@ async function init() {
       const response = await chrome.runtime.sendMessage({
         type: 'SAVE_PAGE_NOW',
         tabId: tab.id,
-        url: pageUrl,
+        url: tab.url,
         title: tab.title || '',
       });
 
