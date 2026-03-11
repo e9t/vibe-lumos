@@ -441,8 +441,10 @@ function showNoteInput(anchorRect) {
 // ─── Save Highlight ───────────────────────────────────────────────────────────
 
 async function saveHighlight(note) {
+  console.log('[Lumos] saveHighlight called, pendingRange:', !!pendingRange, pendingRange?.collapsed, pendingRange?.toString().slice(0, 50));
   const range = pendingRange;
   if (!range || range.collapsed) {
+    console.log('[Lumos] saveHighlight: no valid range, aborting');
     removeToolbar();
     removeNotePopup();
     return;
@@ -450,6 +452,7 @@ async function saveHighlight(note) {
 
   const text = range.toString().trim();
   if (!text) {
+    console.log('[Lumos] saveHighlight: empty text, aborting');
     removeToolbar();
     removeNotePopup();
     return;
