@@ -18,7 +18,7 @@ from lumos.core.store import append_item, get_by_url
 
 app = typer.Typer(
     name="lumos-import",
-    help="Import data from Kindle and Diigo.",
+    help="Import highlights and bookmarks from external services.\n\n  x       Sync liked tweets from X (Twitter)\n  kindle  Sync Kindle highlights\n  diigo   Import Diigo bookmarks",
     add_completion=False,
     no_args_is_help=True,
 )
@@ -222,6 +222,9 @@ def _x_profile_dir(data_dir: Path) -> Path:
     return data_dir / "x-chrome-profile"
 
 
+_X_USERNAME_FILE = "x-username.txt"
+
+
 def _x_login(state_path: Path) -> None:
     """Open persistent Chrome profile for X login."""
     sync_playwright = _get_playwright()
@@ -241,18 +244,48 @@ def _x_login(state_path: Path) -> None:
             ignore_default_args=["--enable-automation"],
         )
         page = context.pages[0] if context.pages else context.new_page()
-        page.goto("https://x.com/i/likes")
-        rprint("[bold]Please log in to X. Waiting for likes page to load...[/bold]")
-        page.wait_for_selector('article[data-testid="tweet"]', timeout=300_000)
-        # Also save storage_state as backup
+        page.goto("https://x.com/login")
+        rprint("[bold]Please log in to X...[/bold]")
+
+        # Wait for login to complete (URL leaves /login and /i/flow paths)
+        while True:
+            page.wait_for_timeout(1000)
+            url = page.url
+            if "x.com" in url and "/login" not in url and "/i/flow" not in url:
+                break
+
+        # Detect username from profile nav link
+        page.wait_for_timeout(2000)
+        username = page.evaluate("""() => {
+            const link = document.querySelector('a[data-testid="AppTabBar_Profile_Link"]');
+            if (link) {
+                const m = link.getAttribute('href')?.match(/^\\/([^/]+)$/);
+                if (m) return m[1];
+            }
+            return '';
+        }""")
+
+        if not username:
+            rprint("[yellow]Could not detect username automatically.[/yellow]")
+            import click
+            username = click.prompt("X username (without @)")
+
+        rprint(f"[dim]Logged in as @{username}[/dim]")
+        (data_dir / _X_USERNAME_FILE).write_text(username)
+
+        # Auto-navigate to likes page
+        page.goto(f"https://x.com/{username}/likes")
+        page.wait_for_selector('article[data-testid="tweet"]', timeout=30_000)
+        rprint("[dim]Likes page loaded.[/dim]")
+
         state_path.parent.mkdir(parents=True, exist_ok=True)
         context.storage_state(path=str(state_path))
         context.close()
     rprint("[green]✓ Session saved[/green]")
 
 
-def _x_fetch_likes(state_path: Path, max_scrolls: int = 50) -> list[dict]:
-    """Fetch liked tweets using persistent Chrome profile."""
+def _x_fetch_likes(state_path: Path, max_scrolls: int = 50, days: int = 7) -> list[dict]:
+    """Fetch liked tweets using persistent Chrome profile. Stops at tweets older than `days`."""
     sync_playwright = _get_playwright()
     chrome = _find_chrome_executable()
     data_dir = state_path.parent
@@ -260,6 +293,14 @@ def _x_fetch_likes(state_path: Path, max_scrolls: int = 50) -> list[dict]:
 
     if not profile_dir.exists():
         return []
+
+    # Read saved username
+    username_file = data_dir / _X_USERNAME_FILE
+    if not username_file.exists():
+        rprint("[red]No username saved. Run --login first.[/red]")
+        return []
+    username = username_file.read_text().strip()
+    likes_url = f"https://x.com/{username}/likes"
 
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
@@ -272,15 +313,23 @@ def _x_fetch_likes(state_path: Path, max_scrolls: int = 50) -> list[dict]:
         )
         page = context.pages[0] if context.pages else context.new_page()
 
-        page.goto("https://x.com/i/likes", wait_until="networkidle")
+        page.goto(likes_url, wait_until="domcontentloaded", timeout=60_000)
+        rprint(f"[dim]  URL after load: {page.url}[/dim]")
         if "login" in page.url or "signin" in page.url:
+            rprint("[dim]  Redirected to login page[/dim]")
             context.close()
             return []
 
         # Wait for tweets to appear
         try:
             page.wait_for_selector('article[data-testid="tweet"]', timeout=15_000)
+            rprint("[dim]  Tweets found on page[/dim]")
         except Exception:
+            # Debug: dump page content snippet
+            title = page.title()
+            body_text = page.evaluate("() => document.body?.innerText?.slice(0, 500) || 'empty'")
+            rprint(f"[dim]  No tweets found. Title: {title}[/dim]")
+            rprint(f"[dim]  Body: {body_text[:200]}[/dim]")
             context.close()
             return []
 
@@ -314,11 +363,27 @@ def _x_fetch_likes(state_path: Path, max_scrolls: int = 50) -> list[dict]:
                 return results;
             }""")
 
+            from datetime import timedelta
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            too_old = False
+
             prev_count = len(tweets)
             for t in batch:
+                # Check if tweet is older than cutoff
+                if t.get("datetime"):
+                    try:
+                        dt = datetime.fromisoformat(t["datetime"].replace("Z", "+00:00"))
+                        if dt < cutoff:
+                            too_old = True
+                            continue
+                    except ValueError:
+                        pass
                 url = t["url"]
                 if url not in tweets:
                     tweets[url] = t
+
+            if too_old:
+                break
 
             if len(tweets) == prev_count:
                 no_new_count += 1
@@ -352,6 +417,7 @@ def import_x_sync(
 
     rprint("[dim]Fetching likes...[/dim]")
     tweets = _x_fetch_likes(state_path)
+    rprint(f"[dim]Fetched {len(tweets)} tweets[/dim]")
 
     if not tweets:
         rprint("[red]Session expired. Re-authenticating...[/red]")
@@ -360,6 +426,10 @@ def import_x_sync(
         if not tweets:
             rprint("[red]Failed to fetch likes.[/red]")
             raise typer.Exit(1)
+
+    # Debug: check if datetime is being extracted
+    with_dt = sum(1 for t in tweets if t.get("datetime"))
+    rprint(f"[dim]{len(tweets)} tweets ({with_dt} with datetime)[/dim]")
 
     count = 0
     skipped = 0
@@ -380,13 +450,16 @@ def import_x_sync(
             except ValueError:
                 pass
 
+        first_line = text.split("\n")[0] if text else ""
+        title = first_line[:80] + ("…" if len(first_line) > 80 else "") if first_line else url.split("/")[-1]
+
         item = Item(
             type=ItemType.PAGE,
             url=url,
-            title=text[:80] + ("…" if len(text) > 80 else "") if text else url.split("/")[-1],
+            title=title,
             text=text or None,
             source=Source(via=SourceVia.X),
-            **({"created_at": created_dt} if created_dt else {}),
+            **({"created_at": created_dt, "updated_at": created_dt} if created_dt else {}),
         )
         append_item(items_path, item)
         count += 1

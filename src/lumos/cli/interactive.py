@@ -634,7 +634,7 @@ class LumosApp(App):
                 prefix = f"{num:>2}  "
                 prefix_w = _wcswidth(prefix)
 
-                title = g.page.title
+                title = g.page.title.replace("\n", " ").strip() if g.page.title else ""
                 hl_count = len(g.children)
                 pri = g.page.priority + sum(c.priority for c in g.children)
                 pri_col = f"{pri:<10}  " if pri != 0 else f"{'·':<10}  "
@@ -705,7 +705,7 @@ class LumosApp(App):
                             if snip_shown:
                                 break
 
-                # URL + separator when expanded
+                # URL + page text + separator when expanded
                 if g.expanded:
                     url_prefix = indent + "  "
                     url_text = url_prefix + g.page.url
@@ -715,6 +715,17 @@ class LumosApp(App):
                         url_line = Text(" ")
                         _highlight_append(url_line, ul, url_q, style="dim", hl_style=self.hl_style)
                         lines.append(url_line)
+                    # Show page text if present and no children (e.g. X tweets)
+                    if g.page.text and not g.children:
+                        lines.append(Text())
+                        text_prefix = indent + "  "
+                        text_q = self._hl_query if self._should_hl("text") else ""
+                        for text_segment in g.page.text.split("\n"):
+                            wrapped = _wrap_text(text_prefix + text_segment, cw, text_prefix)
+                            for wl in wrapped:
+                                tl = Text(" ")
+                                _highlight_append(tl, wl, text_q, hl_style=self.hl_style)
+                                lines.append(tl)
                     sep_count = (w - _wcswidth(indent)) // _wcswidth("┄")
                     lines.append(Text(indent + "┄" * sep_count, style="dim"))
 
