@@ -20,6 +20,7 @@ class ItemType(str, Enum):
 class SourceVia(str, Enum):
     WEB = "web"
     KINDLE = "kindle"
+    X = "x"
 
 
 class Source(BaseModel):
