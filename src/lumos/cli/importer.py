@@ -211,7 +211,6 @@ def _find_chrome_executable() -> str:
         chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         if Path(chrome).exists():
             return chrome
-    # Fallback
     for name in ("google-chrome", "google-chrome-stable", "chromium"):
         found = shutil.which(name)
         if found:
@@ -219,63 +218,80 @@ def _find_chrome_executable() -> str:
     return ""
 
 
+def _x_profile_dir(data_dir: Path) -> Path:
+    return data_dir / "x-chrome-profile"
+
+
 def _x_login(state_path: Path) -> None:
-    """Open browser for X login, save session state."""
+    """Open persistent Chrome profile for X login."""
     sync_playwright = _get_playwright()
     chrome = _find_chrome_executable()
+    data_dir = state_path.parent
+    profile_dir = _x_profile_dir(data_dir)
+    profile_dir.mkdir(parents=True, exist_ok=True)
 
-    rprint("[dim]Opening browser for X login...[/dim]")
+    rprint("[dim]Opening Chrome for X login...[/dim]")
     with sync_playwright() as p:
-        if chrome:
-            browser = p.chromium.launch(headless=False, executable_path=chrome, channel="chrome")
-        else:
-            browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
-        page = context.new_page()
+        context = p.chromium.launch_persistent_context(
+            str(profile_dir),
+            headless=False,
+            executable_path=chrome or None,
+            channel="chrome" if chrome else None,
+            args=["--disable-blink-features=AutomationControlled"],
+            ignore_default_args=["--enable-automation"],
+        )
+        page = context.pages[0] if context.pages else context.new_page()
         page.goto("https://x.com/i/likes")
         rprint("[bold]Please log in to X. Waiting for likes page to load...[/bold]")
         page.wait_for_selector('article[data-testid="tweet"]', timeout=300_000)
+        # Also save storage_state as backup
         state_path.parent.mkdir(parents=True, exist_ok=True)
         context.storage_state(path=str(state_path))
-        browser.close()
+        context.close()
     rprint("[green]✓ Session saved[/green]")
 
 
 def _x_fetch_likes(state_path: Path, max_scrolls: int = 50) -> list[dict]:
-    """Fetch liked tweets by scrolling the likes page. Returns list of {tweet_id, text}."""
+    """Fetch liked tweets using persistent Chrome profile."""
     sync_playwright = _get_playwright()
     chrome = _find_chrome_executable()
+    data_dir = state_path.parent
+    profile_dir = _x_profile_dir(data_dir)
+
+    if not profile_dir.exists():
+        return []
 
     with sync_playwright() as p:
-        if chrome:
-            browser = p.chromium.launch(headless=True, executable_path=chrome, channel="chrome")
-        else:
-            browser = p.chromium.launch(headless=True)
-        context = browser.new_context(storage_state=str(state_path))
-        page = context.new_page()
+        context = p.chromium.launch_persistent_context(
+            str(profile_dir),
+            headless=True,
+            executable_path=chrome or None,
+            channel="chrome" if chrome else None,
+            args=["--disable-blink-features=AutomationControlled"],
+            ignore_default_args=["--enable-automation"],
+        )
+        page = context.pages[0] if context.pages else context.new_page()
 
         page.goto("https://x.com/i/likes", wait_until="networkidle")
         if "login" in page.url or "signin" in page.url:
-            browser.close()
+            context.close()
             return []
 
         # Wait for tweets to appear
         try:
             page.wait_for_selector('article[data-testid="tweet"]', timeout=15_000)
         except Exception:
-            browser.close()
+            context.close()
             return []
 
         tweets = {}
         no_new_count = 0
 
         for _ in range(max_scrolls):
-            # Extract tweets from current view
             batch = page.evaluate("""() => {
                 const articles = document.querySelectorAll('article[data-testid="tweet"]');
                 const results = [];
                 for (const article of articles) {
-                    // Find tweet link (contains /status/)
                     const links = article.querySelectorAll('a[href*="/status/"]');
                     let tweetUrl = '';
                     for (const link of links) {
@@ -287,11 +303,9 @@ def _x_fetch_likes(state_path: Path, max_scrolls: int = 50) -> list[dict]:
                     }
                     if (!tweetUrl) continue;
 
-                    // Get tweet text
                     const textEl = article.querySelector('div[data-testid="tweetText"]');
                     const text = textEl ? textEl.innerText : '';
 
-                    // Get tweet datetime
                     const timeEl = article.querySelector('time[datetime]');
                     const datetime = timeEl ? timeEl.getAttribute('datetime') : '';
 
@@ -313,13 +327,12 @@ def _x_fetch_likes(state_path: Path, max_scrolls: int = 50) -> list[dict]:
             else:
                 no_new_count = 0
 
-            # Scroll down
             page.evaluate("window.scrollBy(0, window.innerHeight * 2)")
             page.wait_for_timeout(1500)
 
         # Save updated state
         context.storage_state(path=str(state_path))
-        browser.close()
+        context.close()
 
     return list(tweets.values())
 
