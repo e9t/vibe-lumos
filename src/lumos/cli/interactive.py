@@ -425,19 +425,25 @@ class LumosApp(App):
             return False
         return True
 
-    # Korean IME: j→ㅓ, k→ㅏ, e→ㄷ, x→ㅌ, n→ㅜ, h→ㅗ, l→ㅣ, q→ㅂ
-    # Korean IME: j→ㅓ, k→ㅏ, e→ㄷ, x→ㅌ, n→ㅜ, h→ㅗ, l→ㅣ, q→ㅂ, o→ㅐ
+    # Korean IME: j→ㅓ, k→ㅏ, e→ㄷ, x→ㅌ, n→ㅜ, h→ㅗ, l→ㅣ, q→ㅂ, o→ㅐ, r→ㄱ
     _KO_KEY_MAP = {
-        "ㅓ": "action_cursor_down",
-        "ㅏ": "action_cursor_up",
-        "ㄷ": "action_expand_all",
-        "ㅌ": "action_delete",
-        "ㅜ": "action_edit_note",
-        "ㅗ": "action_go_first",
-        "ㅣ": "action_go_last",
-        "ㅂ": "action_quit_or_cancel",
-        "ㅐ": "action_open_url",
-        "ㄱ": "action_refresh",
+        "ㅓ": "action_cursor_down",   # j
+        "ㅏ": "action_cursor_up",     # k
+        "ㄷ": "action_expand_all",    # e
+        "ㅌ": "action_delete",        # x
+        "ㅜ": "action_edit_note",     # n
+        "ㅗ": "action_go_first",      # h
+        "ㅣ": "action_go_last",       # l
+        "ㅂ": "action_quit_or_cancel",  # q
+        "ㅐ": "action_open_url",      # o
+        "ㄱ": "action_refresh",       # r
+    }
+    # Shift + Korean IME (vowels don't change with Shift)
+    _KO_SHIFT_KEY_MAP = {
+        "ㅓ": "action_page_down",     # J (Shift+j)
+        "ㅏ": "action_page_up",       # K (Shift+k)
+        "ㅗ": "action_first_page",    # H (Shift+h)
+        "ㅣ": "action_last_page",     # L (Shift+l)
     }
 
     def __init__(
@@ -513,8 +519,12 @@ class LumosApp(App):
     def on_key(self, event) -> None:
         if self.search_active:
             return
-        # Korean IME map
-        action = self._KO_KEY_MAP.get(event.character)
+        # Korean IME map — check Shift variants first
+        action = None
+        if event.character and event.key.startswith("shift+"):
+            action = self._KO_SHIFT_KEY_MAP.get(event.character)
+        if not action:
+            action = self._KO_KEY_MAP.get(event.character)
         # Direct character map (for keys that Textual bindings may miss)
         if not action:
             action = self._CHAR_KEY_MAP.get(event.character)
