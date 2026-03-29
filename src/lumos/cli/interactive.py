@@ -121,6 +121,17 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, Static
+from textual.widgets._footer import FooterKey
+
+# Patch Footer DEFAULT_CSS to use black background instead of ansi_default
+Footer.DEFAULT_CSS = Footer.DEFAULT_CSS.replace(
+    "background: ansi_default;", "background: #2d2d2d;"
+).replace(
+    "color: ansi_magenta;", "color: ansi_yellow;"
+)
+FooterKey.DEFAULT_CSS = FooterKey.DEFAULT_CSS.replace(
+    "background: $footer-item-background;", "background: #2d2d2d;"
+)
 
 
 def _parse_query_terms(query: str) -> list[str]:
