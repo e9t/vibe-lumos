@@ -363,7 +363,7 @@ class LumosApp(App):
     ENABLE_COMMAND_PALETTE = False
     CSS = """
     Screen {
-        background: $surface;
+        background: transparent;
     }
     #content {
         height: 1fr;
@@ -465,6 +465,7 @@ class LumosApp(App):
         llm_config: object | None = None,
     ):
         super().__init__()
+        self.ansi_color = True
         self.items_path = items_path
         self.data_dir = data_dir
         self.query = query
