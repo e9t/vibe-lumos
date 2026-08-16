@@ -13,7 +13,7 @@ import struct
 import sys
 from pathlib import Path
 
-from lumos.core.config import load_config
+from lumos.core.config import load_config, load_env
 from lumos.core.media import save_cache, save_media
 from lumos.core.models import (
     Cache,
@@ -32,6 +32,9 @@ from lumos.core.store import (
     get_by_url,
     update_item,
 )
+
+
+load_env()  # Chrome gives us no shell environment — pull keys from ~/.env
 
 
 def _read_message() -> dict | None:
@@ -71,6 +74,27 @@ def _touch_page_by_item_id(items_path: Path, item_id: str) -> None:
     item = get_by_id(items_path, item_id)
     if item and item.url:
         _touch_page(items_path, item.url)
+
+
+def _suggest_cache_path(suggest_dir: Path, url: str) -> Path:
+    import hashlib
+
+    key = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    return suggest_dir / f"{key}.json"
+
+
+def _read_suggest_cache(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _write_suggest_cache(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
 def _handle(message: dict) -> dict:
@@ -345,6 +369,46 @@ def _handle(message: dict) -> dict:
             return {"ok": False, "error": "Cache file missing"}
         text = cache_path.read_text(encoding="utf-8")
         return {"ok": True, "text": text, "title": page.title}
+
+    elif action == "suggest_highlights":
+        # "What would I have highlighted here?" — LLM picks verbatim phrases,
+        # personalised with a sample of the user's own past highlights.
+        from lumos.core.salient import suggest_phrases
+
+        settings = config.suggest
+        url = message.get("url", "")
+        text = message.get("text", "") or ""
+        base = {"ok": True, "color": settings.color, "phrases": []}
+
+        if not settings.enabled:
+            return {**base, "reason": "disabled"}
+        if not url:
+            return _error("No URL provided")
+
+        cache_path = _suggest_cache_path(config.suggest_dir(), url)
+        cached = _read_suggest_cache(cache_path)
+
+        if cached and not message.get("refresh"):
+            return {**base, "phrases": cached.get("phrases", []), "cached": True}
+
+        if len(text) < settings.min_chars:
+            return {**base, "reason": "too_short"}
+
+        body = text[: settings.max_chars]
+        phrases, err = suggest_phrases(
+            body,
+            config.models.llm,
+            max_phrases=settings.phrase_count(len(body)),
+        )
+        if err:
+            return {**base, "error": err}
+
+        _write_suggest_cache(cache_path, {
+            "url": url,
+            "title": message.get("title", ""),
+            "phrases": phrases,
+        })
+        return {**base, "phrases": phrases}
 
     else:
         return _error(f"Unknown action: {action}")

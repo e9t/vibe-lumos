@@ -113,6 +113,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
     getUrlsToTry(tabId, tab.url).then((urls) => updateBadge(tabId, urls));
   }
+  // History-API navigation: the content script keeps running with stale state
+  if (changeInfo.url && !changeInfo.url.startsWith('chrome://')) {
+    chrome.tabs.sendMessage(tabId, { type: 'URL_CHANGED' }).catch(() => {});
+  }
 });
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
@@ -402,6 +406,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: false, error: e.message });
       }
     })();
+    return true;
+  }
+
+  if (message.type === 'SUGGEST_HIGHLIGHTS') {
+    // Ask the host for phrases worth highlighting on this page
+    sendToHost({
+      action: 'suggest_highlights',
+      url: normalizeUrl(message.url || tabUrl),
+      title: message.title || '',
+      text: message.text || '',
+      refresh: !!message.refresh,
+    })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
     return true;
   }
 

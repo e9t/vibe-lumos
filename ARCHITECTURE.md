@@ -46,7 +46,8 @@ Lumos는 웹 하이라이트, 북마크, 이미지를 캡처하고 JSONL에 저�
 ├── media/                           # 이미지 파일
 └── cache/                           # 페이지 캐시
     ├── {id}.mhtml                   #   원본 페이지 (MHTML)
-    └── {id}.txt                     #   본문 추출 (Readability)
+    ├── {id}.txt                     #   본문 추출 (Readability)
+    └── suggest/{url_hash}.json      #   하이라이트 제안 + dismiss 기록
 ```
 
 ### 3.2 Record Schema
@@ -281,6 +282,24 @@ $ lumos "repetition" --in text
 - fetch → blob → Native Host → `media/` 저장
 - 비동기로 Upstage OCR → `ocr_text` 업데이트. 실패 시 자동 재시도 (max 3, exponential backoff)
 
+**하이라이트 제안 (Content Script + LLM)**
+- 페이지 로드 시 본문을 whitespace-normalized 텍스트 + text node 인덱스로 평탄화
+- Native Host → LLM: "이 글에서 highlight할 만한 구절". 개인화 없음 — 글의 내용이 기준
+- 프롬프트는 규칙 3개(verbatim / 완전한 문장 / 전체 분산)만 유지. 측정 결과 규칙 7개와
+  밀도·길이·분포가 동일했고, 겹침·개수는 이미 `verify_phrases`가 코드로 강제한다.
+  단 규칙을 전부 빼면 모델이 문장 대신 용어(~30자)를 뽑아 하이라이트가 아니게 된다
+- LLM 응답은 본문에 verbatim으로 존재하는 것만 통과 (환각 방지). 겹치는 구절 제거
+- 제안 개수는 고정값이 아니라 **본문 길이 비례** — `ratio`(기본 8%) ÷ `phrase_chars`로 환산.
+  짧은 글 과다 표시 / 긴 글 과소 표시를 막고 밀도를 일정하게 유지
+- 연노랑(`#FFF9C4`)으로 표시. **읽기 전용** — 핸들러 없음. 하이라이트는 사용자가 직접 선택해서 저장
+- URL별로 `cache/suggest/{hash}.json`에 캐싱 — 같은 페이지는 LLM 1회만 호출
+- 제안은 DOM에만 존재. `items.jsonl`은 사용자가 직접 저장한 것만 담는다
+- SPA(Reddit 등) 대응: `chrome.tabs.onUpdated`의 `changeInfo.url` → content script 재실행
+- 본문이 아직 렌더 안 됐으면(client-rendered) 1.5s 간격 3회 재시도
+
+> Chrome은 native host를 shell 환경 없이 spawn한다. `.zshrc`의 `export`는 보이지 않으므로
+> host가 시작 시 `~/.env`를 직접 로드한다 (`config.load_env()`). OCR도 동일하게 적용.
+
 **페이지 저장 + 캐시 (Service Worker)**
 - `Cmd+D` / `Ctrl+D` → 저장 + 아이콘 전환
 - MHTML: `chrome.pageCapture.saveAsMHTML()` → 원본 보존 (JS-proof)
@@ -315,6 +334,7 @@ Chrome이 필요할 때만 spawn, 작업 끝나면 종료. 상시 서버 아님.
 | `save_page` | Cmd+D + 캐시 생성 | item |
 | `get_url_index` | Extension 시작 시 1회 | `{url: [ids]}` |
 | `get_items_by_ids` | 하이라이트 복원 | items |
+| `suggest_highlights` | 페이지 로드 시 제안 (캐시 우선) | `{phrases, color}` |
 
 ---
 

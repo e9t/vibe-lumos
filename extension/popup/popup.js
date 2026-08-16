@@ -233,6 +233,21 @@ async function init() {
     document.getElementById('loading').classList.remove('hidden');
   }
 
+  // Suggestion toggle — paint/clear pale-yellow suggestions on the active tab
+  const chkSuggest = document.getElementById('chk-suggest');
+  const stored = await chrome.storage.local.get('suggestEnabled');
+  chkSuggest.checked = stored.suggestEnabled !== false;
+  chkSuggest.addEventListener('change', async () => {
+    const enabled = chkSuggest.checked;
+    await chrome.storage.local.set({ suggestEnabled: enabled });
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SUGGESTIONS', enabled });
+      showStatus(enabled ? 'Suggestions on ✨' : 'Suggestions off', 'ok');
+    } catch (_) {
+      showStatus('Reload the page to apply', 'error');
+    }
+  });
+
   // Save Page button
   document.getElementById('btn-save-page').addEventListener('click', async () => {
     const btn = document.getElementById('btn-save-page');

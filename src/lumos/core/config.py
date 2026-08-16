@@ -25,7 +25,7 @@ class OcrConfig(BaseModel):
 
 
 class LlmConfig(BaseModel):
-    model: str = "solar-mini"
+    model: str = "solar-pro4"
     api_key_env: str = "UPSTAGE_API_KEY"
     base_url: str = "https://api.upstage.ai/v1"
 
@@ -33,6 +33,29 @@ class LlmConfig(BaseModel):
 class ModelsConfig(BaseModel):
     ocr: OcrConfig = Field(default_factory=OcrConfig)
     llm: LlmConfig = Field(default_factory=LlmConfig)
+
+
+class SuggestConfig(BaseModel):
+    """Auto-suggested highlights shown when a page loads."""
+
+    enabled: bool = True
+    color: str = "#FFF9C4"        # pale yellow — distinct from a real highlight
+    ratio: float = 0.08           # target: highlight ~8% of the body text
+    phrase_chars: int = 150       # observed length of one suggested phrase
+    min_phrases: int = 1
+    max_phrases: int = 12         # ceiling, not a target
+    min_chars: int = 800          # skip pages with too little prose
+    max_chars: int = 12000        # cap the text sent to the LLM
+
+    def phrase_count(self, text_len: int) -> int:
+        """How many phrases to ask for, scaled to the length of the page.
+
+        A fixed count over-highlights short posts and under-highlights long
+        essays; holding the *proportion* steady keeps the density that makes a
+        page skimmable regardless of size.
+        """
+        target = round(text_len * self.ratio / self.phrase_chars)
+        return max(self.min_phrases, min(self.max_phrases, target))
 
 
 class ListConfig(BaseModel):
@@ -50,6 +73,7 @@ class LumosConfig(BaseModel):
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     list: ListConfig = Field(default_factory=ListConfig)
     theme: ThemeConfig = Field(default_factory=ThemeConfig)
+    suggest: SuggestConfig = Field(default_factory=SuggestConfig)
 
     def get_data_dir(self) -> Path:
         env_override = os.environ.get("LUMOS_DATA_DIR")
@@ -65,6 +89,24 @@ class LumosConfig(BaseModel):
 
     def cache_dir(self) -> Path:
         return self.get_data_dir() / "cache"
+
+    def suggest_dir(self) -> Path:
+        return self.cache_dir() / "suggest"
+
+
+def load_env() -> None:
+    """Load ~/.env into os.environ.
+
+    Chrome spawns the native messaging host with a bare environment — no shell
+    profile, so API keys exported in .zshrc are invisible. Without this, every
+    LLM/OCR call from the extension silently fails on a missing key.
+    """
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(Path("~/.env").expanduser())
+    except ImportError:
+        pass
 
 
 def load_config() -> LumosConfig:

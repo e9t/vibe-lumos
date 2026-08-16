@@ -28,10 +28,11 @@ Config lives at `~/.config/lumos.json`. Override the data dir with `LUMOS_DATA_D
   "cache": { "formats": ["mhtml", "readable"] },
   "models": {
     "ocr": { "enabled": true, "provider": "upstage", "api_key_env": "UPSTAGE_API_KEY" },
-    "llm": { "model": "solar-mini", "api_key_env": "UPSTAGE_API_KEY" }
+    "llm": { "model": "solar-pro4", "api_key_env": "UPSTAGE_API_KEY" }
   },
   "list": { "default_limit": 10 },
-  "theme": { "highlight_color": "yellow", "selection_color": "yellow" }
+  "theme": { "highlight_color": "yellow", "selection_color": "yellow" },
+  "suggest": { "enabled": true, "color": "#FFF9C4", "ratio": 0.08 }
 }
 ```
 
@@ -69,6 +70,30 @@ lumos-init --extension-id <ID>
 - **Image capture** — right-click an image, "Save to Lumos" (with async OCR via Upstage)
 - **Page save** — `Cmd+D` / `Ctrl+D` to bookmark + cache (MHTML + Readability)
 - **Highlight restoration** — revisit a page and see your highlights restored
+- **Suggested highlights** — open an article and the phrases you'd probably
+  highlight are marked in pale yellow. They're read-only hints: highlight what
+  you want yourself, the usual way. Phrases are what the page is *about* — its
+  claims, not your taste — verified to be verbatim page text, and cached per URL
+  so a page is only ever analysed once. Toggle with ✨ in the popup, or turn
+  it off entirely in config.
+
+  Requires `UPSTAGE_API_KEY` in `~/.env` — Chrome starts the native host with no
+  shell environment, so an `export` in `.zshrc` is not visible to it.
+
+  제안 분량은 개수가 아니라 **본문 대비 비율**로 정해집니다. `ratio: 0.08`이면 짧은
+  글이든 긴 글이든 본문의 8% 정도가 표시되어 밀도가 일정합니다.
+
+```json
+"suggest": {
+  "enabled": true,
+  "color": "#FFF9C4",
+  "ratio": 0.08,        // 본문의 몇 %를 표시할지
+  "phrase_chars": 150,  // 구절 1개의 평균 길이 (개수 환산용)
+  "min_phrases": 1,
+  "max_phrases": 12,    // 상한 (목표치 아님)
+  "min_chars": 800      // 이보다 짧은 페이지는 건너뜀
+}
+```
 
 ## License
 

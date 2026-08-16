@@ -97,6 +97,86 @@ function getTextNodesInRange(range) {
  * Wraps each text-node slice in a <mark class="lumos-highlight">.
  * Link-safe: operates on individual text nodes, never uses surroundContents.
  */
+// ─── Style Pinning ────────────────────────────────────────────────────────────
+//
+// Our UI lives in the page's DOM, so the page's stylesheet can reach it. A rule
+// like `#app button { color:#888 !important }` outranks ours on specificity and
+// leaves the toolbar unreadable. Inline + !important is the one declaration an
+// author stylesheet cannot beat, so pin whatever decides legibility.
+
+function pin(el, styles) {
+  for (const key in styles) el.style.setProperty(key, styles[key], 'important');
+  return el;
+}
+
+const PANEL_STYLE = {
+  opacity: '1',
+  filter: 'none',
+  'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  'text-transform': 'none',
+  'letter-spacing': 'normal',
+  'text-shadow': 'none',
+};
+
+const BUTTON_STYLE = {
+  ...PANEL_STYLE,
+  color: '#fff',
+  '-webkit-text-fill-color': '#fff',
+  background: 'none',
+  border: 'none',
+  'font-size': '12px',
+  'line-height': '1.4',
+  'text-decoration': 'none',
+};
+
+const NOTE_BUTTON_STYLE = {
+  ...PANEL_STYLE,
+  color: '#ccc',
+  '-webkit-text-fill-color': '#ccc',
+  background: '#333',
+  border: 'none',
+  'font-size': '12px',
+};
+
+const PRIMARY_BUTTON_STYLE = {
+  ...NOTE_BUTTON_STYLE,
+  color: '#fff',
+  '-webkit-text-fill-color': '#fff',
+  background: '#4CAF50',
+};
+
+// <mark> is a tag sites style themselves (borders, padding, custom backgrounds).
+// Ours must look the same everywhere, so pin it rather than hope the page is quiet.
+const MARK_STYLE = {
+  display: 'inline',
+  color: 'inherit',
+  border: 'none',
+  outline: 'none',
+  'box-shadow': 'none',
+  padding: '0',
+  margin: '0',
+  'border-radius': '2px',
+  'font-size': 'inherit',
+  'font-weight': 'inherit',
+  'font-style': 'inherit',
+  'line-height': 'inherit',
+  opacity: '1',
+  filter: 'none',
+  '-webkit-box-decoration-break': 'clone',
+  'box-decoration-break': 'clone',
+};
+
+/** Toolbar button with its look pinned against the page, hover included. */
+function pinButton(btn, style = BUTTON_STYLE) {
+  pin(btn, style);
+  const base = style.background || 'none';
+  btn.addEventListener('mouseenter', () =>
+    btn.style.setProperty('background', 'rgba(255, 255, 255, 0.15)', 'important'));
+  btn.addEventListener('mouseleave', () =>
+    btn.style.setProperty('background', base, 'important'));
+  return btn;
+}
+
 let activeTooltip = null;
 
 function showNoteTooltip(mark) {
@@ -107,6 +187,8 @@ function showNoteTooltip(mark) {
 
   const tip = document.createElement('div');
   tip.className = 'lumos-tooltip';
+  pin(tip, { ...PANEL_STYLE, color: '#fff', '-webkit-text-fill-color': '#fff',
+             background: '#1a1a1a', 'font-size': '12px' });
   const parts = [];
   if (priority) parts.push(`⭐ ${priority}`);
   if (note) parts.push(note);
@@ -129,7 +211,7 @@ function hideNoteTooltip() {
   activeTooltip = null;
 }
 
-function applyMark(textNodes, itemId, color = '#FFEB3B', note = null, priority = 0) {
+function wrapTextNodes(textNodes, configure) {
   const marks = [];
   for (const { node, start, end } of textNodes) {
     let target = node;
@@ -137,11 +219,21 @@ function applyMark(textNodes, itemId, color = '#FFEB3B', note = null, priority =
     if (start > 0) target = target.splitText(start);
 
     const mark = document.createElement('mark');
+    configure(mark);
+    target.parentNode.insertBefore(mark, target);
+    mark.appendChild(target);
+    marks.push(mark);
+  }
+  return marks;
+}
+
+function applyMark(textNodes, itemId, color = '#FFEB3B', note = null, priority = 0) {
+  return wrapTextNodes(textNodes, (mark) => {
     mark.className = 'lumos-highlight';
     mark.dataset.lumosId = itemId;
     if (note) mark.dataset.lumosNote = note;
     if (priority) mark.dataset.lumosPriority = String(priority);
-    mark.style.backgroundColor = color;
+    pin(mark, { ...MARK_STYLE, 'background-color': color });
     mark.addEventListener('mouseenter', () => showNoteTooltip(mark));
     mark.addEventListener('mouseleave', hideNoteTooltip);
     mark.addEventListener('click', (e) => {
@@ -157,11 +249,7 @@ function applyMark(textNodes, itemId, color = '#FFEB3B', note = null, priority =
       e.stopPropagation();
       showHighlightMenu(mark);
     });
-    target.parentNode.insertBefore(mark, target);
-    mark.appendChild(target);
-    marks.push(mark);
-  }
-  return marks;
+  });
 }
 
 /** Remove mark elements, restoring original text nodes */
@@ -183,8 +271,10 @@ function showHighlightMenu(mark) {
 
   toolbar = document.createElement('div');
   toolbar.className = 'lumos-toolbar';
+  pin(toolbar, { ...PANEL_STYLE, background: '#1a1a1a', 'font-size': '13px' });
 
   const btnUp = document.createElement('button');
+  pinButton(btnUp);
   btnUp.textContent = '👍';
   btnUp.title = 'Priority up';
   btnUp.addEventListener('pointerdown', (e) => {
@@ -193,6 +283,7 @@ function showHighlightMenu(mark) {
   }, true);
 
   const btnDown = document.createElement('button');
+  pinButton(btnDown);
   btnDown.textContent = '👎';
   btnDown.title = 'Priority down';
   btnDown.addEventListener('pointerdown', (e) => {
@@ -201,6 +292,7 @@ function showHighlightMenu(mark) {
   }, true);
 
   const btnNote = document.createElement('button');
+  pinButton(btnNote);
   btnNote.textContent = mark.dataset.lumosNote ? '📝 Edit Note' : '📝 Add Note';
   btnNote.addEventListener('pointerdown', (e) => {
     e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
@@ -208,6 +300,7 @@ function showHighlightMenu(mark) {
   }, true);
 
   const btnRemove = document.createElement('button');
+  pinButton(btnRemove);
   btnRemove.textContent = '🗑 Remove';
   btnRemove.addEventListener('pointerdown', (e) => {
     e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
@@ -227,8 +320,11 @@ function showEditNoteInput(mark) {
 
   notePopup = document.createElement('div');
   notePopup.className = 'lumos-note-input';
+  pin(notePopup, { ...PANEL_STYLE, background: '#1a1a1a' });
 
   const textarea = document.createElement('textarea');
+  pin(textarea, { ...PANEL_STYLE, color: '#fff', '-webkit-text-fill-color': '#fff',
+                  background: '#2a2a2a', border: '1px solid #444', 'font-size': '13px' });
   textarea.placeholder = 'Add a note…';
   textarea.value = mark.dataset.lumosNote || '';
 
@@ -236,10 +332,12 @@ function showEditNoteInput(mark) {
   actions.className = 'lumos-note-actions';
 
   const btnCancel = document.createElement('button');
+  pinButton(btnCancel, NOTE_BUTTON_STYLE);
   btnCancel.textContent = 'Cancel';
   btnCancel.addEventListener('click', () => removeNotePopup());
 
   const btnSave = document.createElement('button');
+  pinButton(btnSave, PRIMARY_BUTTON_STYLE);
   btnSave.textContent = 'Save';
   btnSave.className = 'primary';
   btnSave.addEventListener('click', async () => {
@@ -345,6 +443,8 @@ function computeLocation(range) {
 function showToast(text) {
   const el = document.createElement('div');
   el.className = 'lumos-toast';
+  pin(el, { ...PANEL_STYLE, color: '#fff', '-webkit-text-fill-color': '#fff',
+            background: '#1a1a1a', 'font-size': '13px' });
   el.textContent = text;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2500);
@@ -389,8 +489,10 @@ function showToolbar(rect) {
 
   toolbar = document.createElement('div');
   toolbar.className = 'lumos-toolbar';
+  pin(toolbar, { ...PANEL_STYLE, background: '#1a1a1a', 'font-size': '13px' });
 
   const btnHighlight = document.createElement('button');
+  pinButton(btnHighlight);
   btnHighlight.textContent = '💡 Highlight';
   btnHighlight.onpointerdown = function(e) {
     e.preventDefault();
@@ -399,6 +501,7 @@ function showToolbar(rect) {
   btnHighlight.onclick = function() { saveHighlight(null); };
 
   const btnNote = document.createElement('button');
+  pinButton(btnNote);
   btnNote.textContent = '📝 Note';
   btnNote.onpointerdown = function(e) {
     e.preventDefault();
@@ -417,14 +520,18 @@ function showNoteInput(anchorRect) {
 
   notePopup = document.createElement('div');
   notePopup.className = 'lumos-note-input';
+  pin(notePopup, { ...PANEL_STYLE, background: '#1a1a1a' });
 
   const textarea = document.createElement('textarea');
+  pin(textarea, { ...PANEL_STYLE, color: '#fff', '-webkit-text-fill-color': '#fff',
+                  background: '#2a2a2a', border: '1px solid #444', 'font-size': '13px' });
   textarea.placeholder = 'Add a note…';
 
   const actions = document.createElement('div');
   actions.className = 'lumos-note-actions';
 
   const btnCancel = document.createElement('button');
+  pinButton(btnCancel, NOTE_BUTTON_STYLE);
   btnCancel.textContent = 'Cancel';
   btnCancel.addEventListener('click', () => {
     removeNotePopup();
@@ -432,6 +539,7 @@ function showNoteInput(anchorRect) {
   });
 
   const btnSave = document.createElement('button');
+  pinButton(btnSave, PRIMARY_BUTTON_STYLE);
   btnSave.textContent = 'Save';
   btnSave.className = 'primary';
   btnSave.addEventListener('click', () => saveHighlight(textarea.value.trim() || null));
@@ -483,6 +591,13 @@ async function saveHighlight(note) {
   // Apply mark optimistically with a temp ID
   const tempId = `temp_${Date.now()}`;
   const marks = applyMark(textNodes, tempId);
+
+  // Highlighting over a suggestion supersedes it — unwrap so the real
+  // highlight isn't nested inside a pale-yellow one
+  marks.forEach((m) => {
+    const suggestion = m.closest('mark.lumos-suggestion');
+    if (suggestion) removeMark(suggestion);
+  });
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -691,11 +806,275 @@ function findTextInBody(searchText) {
   return collectTextNodes(document.body, searchText, idx);
 }
 
+// ─── Suggested Highlights ────────────────────────────────────────────────────
+//
+// On load we hand the page's readable text to the native host, which asks the
+// LLM which phrases *this* reader would highlight (primed with their own past
+// highlights). Suggestions are painted pale yellow — click one to keep it as a
+// real highlight, or dismiss it.
+
+const SUGGEST_COLOR = '#FFF9C4';
+const SUGGEST_MIN_CHARS = 500;
+const SUGGEST_MAX_INDEX = 200000;
+const SUGGEST_RETRY_MS = 1500;
+const SPA_SETTLE_MS = 800;
+
+const BLOCK_TAGS = new Set([
+  'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DD', 'DIV', 'DL', 'DT',
+  'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3',
+  'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE',
+  'SECTION', 'TABLE', 'TD', 'TH', 'TR', 'UL', 'BODY',
+]);
+
+const SKIP_SELECTOR =
+  'script, style, noscript, template, textarea, nav, footer, aside, ' +
+  '[role="navigation"], [role="banner"], [role="complementary"], ' +
+  // Titles and section headings label the content, they aren't the content —
+  // marking them tells you nothing you didn't get from glancing at the page
+  'h1, h2, h3, h4, h5, h6, [role="heading"], ' +
+  '.lumos-toolbar, .lumos-note-input, .lumos-tooltip, .lumos-toast';
+
+let suggestEnabled = true;
+
+function nearestBlock(node) {
+  let el = node.parentElement;
+  while (el && !BLOCK_TAGS.has(el.tagName)) el = el.parentElement;
+  return el;
+}
+
+function suggestScope() {
+  return document.querySelector('article, main, [role="main"]') || document.body;
+}
+
+/**
+ * Flatten a subtree into whitespace-normalised text plus a map back to the
+ * original text nodes. Text already inside a real highlight is skipped, so we
+ * never suggest something the user has already kept.
+ *
+ * Returns { text, entries: [{ node, start, offsets }] } where `offsets[i]` is
+ * the character offset inside `node` for normalised character `start + i`.
+ * Every whitespace run in `text` is exactly one character, so a phrase can be
+ * matched with a length-preserving `replace(/\s/g, ' ')`.
+ */
+function buildTextIndex(scope) {
+  const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (parent.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+      if (parent.closest('mark.lumos-highlight')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const entries = [];
+  let text = '';
+  let prevBlock = null;
+  let node;
+
+  while ((node = walker.nextNode())) {
+    const raw = node.nodeValue;
+    let chunk = '';
+    const offsets = [];
+    let lastWasSpace = true; // drops the node's leading whitespace run
+
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if (/\s/.test(ch)) {
+        if (lastWasSpace) continue;
+        chunk += ' ';
+        lastWasSpace = true;
+      } else {
+        chunk += ch;
+        lastWasSpace = false;
+      }
+      offsets.push(i);
+    }
+    if (!chunk.trim()) continue;
+
+    const block = nearestBlock(node);
+    if (text && !/\s$/.test(text)) {
+      if (block !== prevBlock) text += '\n';
+      else if (/^\s/.test(raw)) text += ' ';
+    }
+    prevBlock = block;
+
+    entries.push({ node, start: text.length, offsets });
+    text += chunk;
+    if (text.length > SUGGEST_MAX_INDEX) break;
+  }
+
+  return { text, entries };
+}
+
+/** Locate a phrase in the index, skipping ranges already taken. */
+function findPhrase(index, phrase, taken) {
+  const haystack = index.text.replace(/\s/g, ' ').toLowerCase();
+  const needle = phrase.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (needle.length < 12) return null;
+
+  let from = 0;
+  for (;;) {
+    const start = haystack.indexOf(needle, from);
+    if (start === -1) return null;
+    const end = start + needle.length;
+    if (!taken.some(([s, e]) => start < e && s < end)) return { start, end };
+    from = start + 1;
+  }
+}
+
+/** Map a [start, end) range in the index back to text-node slices. */
+function rangeToTextNodes(index, start, end) {
+  const result = [];
+  for (const entry of index.entries) {
+    const entryEnd = entry.start + entry.offsets.length;
+    if (entryEnd <= start || entry.start >= end) continue;
+    const from = Math.max(start, entry.start) - entry.start;
+    const to = Math.min(end, entryEnd) - entry.start;
+    if (to <= from) continue;
+    const raw = entry.node.nodeValue;
+    let localStart = entry.offsets[from];
+    const localEnd = entry.offsets[to - 1] + 1;
+    // Whitespace between two nodes of the same phrase belongs to the phrase —
+    // without this a highlight spanning <em>/<a> paints with visible gaps.
+    if (result.length && !raw.slice(0, localStart).trim()) localStart = 0;
+    result.push({ node: entry.node, start: localStart, end: localEnd });
+  }
+
+  for (let i = 0; i < result.length - 1; i++) {
+    const slice = result[i];
+    const raw = slice.node.nodeValue;
+    if (!raw.slice(slice.end).trim()) slice.end = raw.length;
+  }
+  return result;
+}
+
+function clearSuggestions() {
+  document.querySelectorAll('mark.lumos-suggestion').forEach(removeMark);
+}
+
+/** Titles are often repeated in the body as plain text — catch those too. */
+function isPageTitle(phrase) {
+  const title = document.title.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!title) return false;
+  return title.includes(phrase.replace(/\s+/g, ' ').trim().toLowerCase());
+}
+
+function paintSuggestions(phrases, color) {
+  const index = buildTextIndex(suggestScope());
+  const taken = [];
+  const hits = [];
+
+  for (const phrase of phrases) {
+    if (isPageTitle(phrase)) continue;
+    const hit = findPhrase(index, phrase, taken);
+    if (!hit) continue;
+    taken.push([hit.start, hit.end]);
+    hits.push({ phrase, ...hit });
+  }
+
+  // Paint back-to-front: wrapping splits text nodes, which would invalidate
+  // offsets of any hit that sits later in the same node.
+  hits.sort((a, b) => b.start - a.start);
+
+  let painted = 0;
+  for (const hit of hits) {
+    const textNodes = rangeToTextNodes(index, hit.start, hit.end);
+    if (!textNodes.length) continue;
+    // Purely visual: no handlers, so selecting the text and highlighting it
+    // yourself works exactly as it does anywhere else on the page.
+    wrapTextNodes(textNodes, (mark) => {
+      mark.className = 'lumos-suggestion';
+      mark.dataset.lumosPhrase = hit.phrase;
+      pin(mark, { ...MARK_STYLE, 'background-color': color || SUGGEST_COLOR });
+    });
+    painted++;
+  }
+  return painted;
+}
+
+async function requestSuggestions(refresh = false, retries = 3) {
+  if (!suggestEnabled) return;
+  clearSuggestions();
+
+  const index = buildTextIndex(suggestScope());
+  if (index.text.length < SUGGEST_MIN_CHARS) {
+    // Client-rendered pages often have no article text yet at document_idle
+    if (retries > 0) {
+      setTimeout(() => requestSuggestions(refresh, retries - 1), SUGGEST_RETRY_MS);
+    }
+    return;
+  }
+
+  const requestedUrl = getCanonicalUrl();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'SUGGEST_HIGHLIGHTS',
+      url: requestedUrl,
+      title: document.title,
+      text: index.text,
+      refresh,
+    });
+    // The page may have navigated away while the LLM was thinking
+    if (getCanonicalUrl() !== requestedUrl) return;
+    if (!response?.ok) return;
+    // Config problems (missing API key, unreachable model) would otherwise be
+    // invisible — say it once instead of quietly doing nothing
+    if (response.error) {
+      showToast('Lumos: ' + response.error);
+      return;
+    }
+    if (response.phrases?.length) paintSuggestions(response.phrases, response.color);
+  } catch (_) {
+    // Native host unavailable — suggestions are best-effort
+  }
+}
+
+async function initSuggestions() {
+  try {
+    const stored = await chrome.storage.local.get('suggestEnabled');
+    suggestEnabled = stored.suggestEnabled !== false;
+  } catch (_) {}
+  requestSuggestions();
+}
+
+/**
+ * Client-side navigation (Reddit, Medium, X…) never reloads the content
+ * script, so re-run everything when the service worker reports a new URL.
+ */
+let lastSeenUrl = location.href.split('#')[0];
+
+function onUrlChanged() {
+  const url = location.href.split('#')[0];
+  if (url === lastSeenUrl) return;
+  lastSeenUrl = url;
+
+  clearSuggestions();
+  document.querySelectorAll('mark.lumos-highlight').forEach(removeMark);
+  // Let the new view render before reading it
+  setTimeout(() => {
+    Promise.resolve(restoreHighlights()).finally(() => requestSuggestions());
+  }, SPA_SETTLE_MS);
+}
+
 // ─── Messages from Service Worker ────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'GET_CANONICAL_URL') {
     sendResponse({ url: getCanonicalUrl() });
+    return;
+  }
+  if (message.type === 'URL_CHANGED') {
+    onUrlChanged();
+    sendResponse({ ok: true });
+    return;
+  }
+  if (message.type === 'TOGGLE_SUGGESTIONS') {
+    suggestEnabled = !!message.enabled;
+    if (suggestEnabled) requestSuggestions(message.refresh);
+    else clearSuggestions();
+    sendResponse({ ok: true });
     return;
   }
   if (message.type === 'PAGE_SAVED') showToast('Page saved to Lumos ✓');
@@ -714,10 +1093,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
+function init() {
+  // Suggestions run after restore so they never land on an existing highlight
+  Promise.resolve(restoreHighlights()).finally(initSuggestions);
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', restoreHighlights);
+  document.addEventListener('DOMContentLoaded', init);
 } else {
-  restoreHighlights();
+  init();
 }
 
 })(); // end top-frame-only IIFE

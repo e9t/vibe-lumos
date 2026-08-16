@@ -12,6 +12,22 @@ mark.lumos-highlight {
   box-decoration-break: clone;
 }
 
+/* Suggested highlight — pale yellow, read-only.
+   No cursor or hover affordance: it's a hint, not a control. Select the text
+   and use the normal toolbar to keep it. */
+mark.lumos-suggestion {
+  display: inline;
+  background-color: #FFF9C4;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0;
+  margin: 0;
+  line-height: inherit;
+  cursor: inherit;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
 /* Mini toolbar */
 .lumos-toolbar {
   position: fixed;
