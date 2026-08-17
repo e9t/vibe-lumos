@@ -147,6 +147,16 @@ const PRIMARY_BUTTON_STYLE = {
 
 // <mark> is a tag sites style themselves (borders, padding, custom backgrounds).
 // Ours must look the same everywhere, so pin it rather than hope the page is quiet.
+// Pinning a dark ink (below) flattens links inside a highlight into plain text:
+// the page's link color is gone and many sites drop the underline. Put the
+// underline back on marks that sit inside an <a> so URLs stay recognizable.
+const MARK_LINK_STYLE = {
+  'text-decoration-line': 'underline',
+  'text-decoration-color': 'currentColor',
+  'text-decoration-style': 'solid',
+  'text-underline-offset': '2px',
+};
+
 const MARK_STYLE = {
   display: 'inline',
   // Our backgrounds are always light yellow, so inheriting the page's ink turns
@@ -226,6 +236,8 @@ function wrapTextNodes(textNodes, configure) {
     configure(mark);
     target.parentNode.insertBefore(mark, target);
     mark.appendChild(target);
+    // Only knowable once the mark is in the tree — configure() runs detached.
+    if (mark.parentElement?.closest('a[href]')) pin(mark, MARK_LINK_STYLE);
     marks.push(mark);
   }
   return marks;

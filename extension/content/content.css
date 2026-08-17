@@ -32,6 +32,15 @@ mark.lumos-suggestion {
   box-decoration-break: clone;
 }
 
+/* A pinned ink erases the page's link color, so keep links underlined inside
+   a mark — otherwise a URL is indistinguishable from the text around it. */
+a mark.lumos-highlight,
+a mark.lumos-suggestion {
+  text-decoration-line: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 2px;
+}
+
 /* Mini toolbar */
 .lumos-toolbar {
   position: fixed;
