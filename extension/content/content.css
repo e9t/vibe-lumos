@@ -2,7 +2,10 @@
 mark.lumos-highlight {
   display: inline;
   background-color: #FFEB3B;
-  color: inherit;
+  /* The background is always light, so inheriting the page's text color makes
+     highlights unreadable on dark sites. Pin a dark ink instead. */
+  color: #1a1a1a;
+  -webkit-text-fill-color: #1a1a1a;
   border-radius: 2px;
   padding: 0;
   margin: 0;
@@ -18,7 +21,8 @@ mark.lumos-highlight {
 mark.lumos-suggestion {
   display: inline;
   background-color: #FFF9C4;
-  color: inherit;
+  color: #1a1a1a;
+  -webkit-text-fill-color: #1a1a1a;
   border-radius: 2px;
   padding: 0;
   margin: 0;

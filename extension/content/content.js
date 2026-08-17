@@ -149,7 +149,11 @@ const PRIMARY_BUTTON_STYLE = {
 // Ours must look the same everywhere, so pin it rather than hope the page is quiet.
 const MARK_STYLE = {
   display: 'inline',
-  color: 'inherit',
+  // Our backgrounds are always light yellow, so inheriting the page's ink turns
+  // highlights into white-on-yellow on dark sites. Pin a dark ink instead.
+  color: '#1a1a1a',
+  '-webkit-text-fill-color': '#1a1a1a',
+  'text-shadow': 'none',
   border: 'none',
   outline: 'none',
   'box-shadow': 'none',
