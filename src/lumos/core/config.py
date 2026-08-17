@@ -40,19 +40,21 @@ class SuggestConfig(BaseModel):
 
     enabled: bool = True
     color: str = "#FFF9C4"        # pale yellow — distinct from a real highlight
-    ratio: float = 0.08           # target: highlight ~8% of the body text
+    ratio: float = 0.06           # ~6% of the body text is offered for underlining
     phrase_chars: int = 150       # observed length of one suggested phrase
     min_phrases: int = 1
-    max_phrases: int = 12         # ceiling, not a target
+    max_phrases: int = 80         # runaway guard for 200k-char pages, not a target
     min_chars: int = 800          # skip pages with too little prose
-    max_chars: int = 12000        # cap the text sent to the LLM
+    max_chars: int = 12000        # LLM reading budget per call
+    max_calls: int = 6            # parallel calls before long pages get excerpted
 
     def phrase_count(self, text_len: int) -> int:
-        """How many phrases to ask for, scaled to the length of the page.
+        """How many passages to offer, scaled to the length of the page.
 
         A fixed count over-highlights short posts and under-highlights long
         essays; holding the *proportion* steady keeps the density that makes a
-        page skimmable regardless of size.
+        page skimmable regardless of size. This is a ceiling the model is free
+        to come in under — an article with three good lines returns three.
         """
         target = round(text_len * self.ratio / self.phrase_chars)
         return max(self.min_phrases, min(self.max_phrases, target))

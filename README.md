@@ -32,7 +32,7 @@ Config lives at `~/.config/lumos.json`. Override the data dir with `LUMOS_DATA_D
   },
   "list": { "default_limit": 10 },
   "theme": { "highlight_color": "yellow", "selection_color": "yellow" },
-  "suggest": { "enabled": true, "color": "#FFF9C4", "ratio": 0.08 }
+  "suggest": { "enabled": true, "color": "#FFF9C4", "ratio": 0.06 }
 }
 ```
 
@@ -80,18 +80,22 @@ lumos-init --extension-id <ID>
   Requires `UPSTAGE_API_KEY` in `~/.env` — Chrome starts the native host with no
   shell environment, so an `export` in `.zshrc` is not visible to it.
 
-  제안 분량은 개수가 아니라 **본문 대비 비율**로 정해집니다. `ratio: 0.08`이면 짧은
-  글이든 긴 글이든 본문의 8% 정도가 표시되어 밀도가 일정합니다.
+  제안 분량은 정해진 개수가 아니라 **본문 대비 비율**로 정해집니다. `ratio: 0.06`이면
+  짧은 글이든 긴 글이든 본문의 6% 정도가 표시되어 밀도가 일정합니다. 이 값은 상한일 뿐,
+  밑줄 그을 만한 게 없는 구간은 모델이 건너뜁니다 — 링크 목록뿐인 페이지는 거의 비어
+  있고, 같은 길이의 에세이는 끝까지 채워집니다 (실측: 8천자 → 2~3개, 5만자 → 19개).
 
 ```json
 "suggest": {
   "enabled": true,
   "color": "#FFF9C4",
-  "ratio": 0.08,        // 본문의 몇 %를 표시할지
+  "ratio": 0.06,        // 본문의 몇 %를 표시할지 (상한)
   "phrase_chars": 150,  // 구절 1개의 평균 길이 (개수 환산용)
   "min_phrases": 1,
-  "max_phrases": 12,    // 상한 (목표치 아님)
-  "min_chars": 800      // 이보다 짧은 페이지는 건너뜀
+  "max_phrases": 80,    // 폭주 방지용 안전장치 (목표치 아님)
+  "min_chars": 800,     // 이보다 짧은 페이지는 건너뜀
+  "max_chars": 12000,   // LLM 호출 1회당 읽는 분량
+  "max_calls": 6        // 긴 글은 병렬 호출로 나눠 끝까지 읽음
 }
 ```
 

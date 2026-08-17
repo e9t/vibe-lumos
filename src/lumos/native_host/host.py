@@ -394,11 +394,14 @@ def _handle(message: dict) -> dict:
         if len(text) < settings.min_chars:
             return {**base, "reason": "too_short"}
 
-        body = text[: settings.max_chars]
+        # The whole page goes in: max_chars is the model's reading budget, spent
+        # evenly across the page, not the point where the page gets cut off.
         phrases, err = suggest_phrases(
-            body,
+            text,
             config.models.llm,
-            max_phrases=settings.phrase_count(len(body)),
+            max_phrases=settings.phrase_count(len(text)),
+            max_chars=settings.max_chars,
+            max_calls=settings.max_calls,
         )
         if err:
             return {**base, "error": err}
