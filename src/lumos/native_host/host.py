@@ -398,7 +398,8 @@ def _handle(message: dict) -> dict:
         # evenly across the page, not the point where the page gets cut off.
         phrases, err = suggest_phrases(
             text,
-            config.models.llm,
+            # Short pages go to the fast model — same picks, half the wait
+            config.models.llm.for_length(len(text), settings.fast_below),
             max_phrases=settings.phrase_count(len(text)),
             max_chars=settings.max_chars,
             max_calls=settings.max_calls,

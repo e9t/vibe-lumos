@@ -95,9 +95,14 @@ lumos-init --extension-id <ID>
   "max_phrases": 80,    // 폭주 방지용 안전장치 (목표치 아님)
   "min_chars": 800,     // 이보다 짧은 페이지는 건너뜀
   "max_chars": 12000,   // LLM 호출 1회당 읽는 분량
-  "max_calls": 6        // 긴 글은 병렬 호출로 나눠 끝까지 읽음
+  "max_calls": 6,       // 긴 글은 병렬 호출로 나눠 끝까지 읽음
+  "fast_below": 0       // 이보다 짧은 페이지는 fast_model로 (0 = 끔)
 }
 ```
+
+  `models.llm.fast_model`(기본 `solar-mini`)은 `fast_below`를 올려야 쓰입니다. 실측상
+  짧은 글에서 1~3초를 벌지만 제안 시작 위치가 본문 16~27%로 밀립니다 (pro4는 5~11%).
+  제안은 페이지당 1회만 호출하고 캐싱되므로 기본은 꺼둡니다. 속도를 원하면 `10000` 정도.
 
 ## License
 

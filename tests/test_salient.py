@@ -319,6 +319,26 @@ def test_suggest_reports_failure_when_every_call_dies(monkeypatch):
     assert phrases == [] and "rate limited" in err
 
 
+def test_fast_model_reads_short_pages_when_enabled():
+    llm = LlmConfig(model="big", fast_model="small")
+    assert llm.for_length(9_999, 10_000).model == "small"
+    assert llm.for_length(10_000, 10_000).model == "big"
+    # Everything but the model carries over
+    assert llm.for_length(10, 10_000).api_key_env == llm.api_key_env
+
+
+def test_fast_model_is_off_by_default():
+    # The small model trades away the opening of the page for a second or two
+    assert SuggestConfig().fast_below == 0
+    llm = LlmConfig(model="big", fast_model="small")
+    assert llm.for_length(10, SuggestConfig().fast_below).model == "big"
+
+
+def test_fast_model_can_be_cleared():
+    llm = LlmConfig(model="big", fast_model="")
+    assert llm.for_length(10, 15000).model == "big"
+
+
 def test_suggest_returns_fewer_than_asked_when_the_model_holds_back(monkeypatch):
     # A page of boilerplate: the model skips parts, and nothing pads the result
     monkeypatch.setattr(

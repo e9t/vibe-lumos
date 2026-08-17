@@ -26,8 +26,23 @@ class OcrConfig(BaseModel):
 
 class LlmConfig(BaseModel):
     model: str = "solar-pro4"
+    fast_model: str = "solar-mini"  # only used if suggest.fast_below is raised
     api_key_env: str = "UPSTAGE_API_KEY"
     base_url: str = "https://api.upstage.ai/v1"
+
+    def for_length(self, text_len: int, fast_below: int) -> LlmConfig:
+        """The model to read a page of this length with.
+
+        Measured on saved pages, the small model is worth about 1-3s on a short
+        page and costs the opening of it: its first pick lands at 16-27% of the
+        body where the large model starts at 5-11%, run after run. Past ~15k
+        chars it also starts paraphrasing instead of quoting, so a third of its
+        picks fail the verbatim check and vanish. Off by default (fast_below 0)
+        — suggestions are cached per page, so those seconds are paid once.
+        """
+        if not self.fast_model or fast_below <= 0 or text_len >= fast_below:
+            return self
+        return self.model_copy(update={"model": self.fast_model})
 
 
 class ModelsConfig(BaseModel):
@@ -47,6 +62,7 @@ class SuggestConfig(BaseModel):
     min_chars: int = 800          # skip pages with too little prose
     max_chars: int = 12000        # LLM reading budget per call
     max_calls: int = 6            # parallel calls before long pages get excerpted
+    fast_below: int = 0           # 0 = off; raise (~10000) to trade spread for speed
 
     def phrase_count(self, text_len: int) -> int:
         """How many passages to offer, scaled to the length of the page.
